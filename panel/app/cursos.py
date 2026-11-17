@@ -5,6 +5,7 @@ Los videos y archivos se guardan en RECURSOS/<slug>/ (carpeta del NAS, nginx la 
 """
 import json
 import os
+from datetime import date
 import re
 import sqlite3
 import time
@@ -19,7 +20,9 @@ EXTENSIONES = {".mp4": "video", ".webm": "video", ".m4v": "video", ".mov": "vide
                ".pdf": "documento", ".jpg": "imagen", ".jpeg": "imagen", ".png": "imagen", ".webp": "imagen"}
 ACCESO = {"abierto": "Abierto: lo puede hacer cualquiera desde la portada",
           "asignados": "Solo choferes asignados (entran con DNI y fecha de nacimiento)"}
-VIGENCIA = {0: "No vence", 6: "Cada 6 meses", 12: "Anual (cada 12 meses)", 24: "Cada 2 años", 36: "Cada 3 años"}
+VIGENCIA_FECHA = -1          # vigencia_meses = -1: vence en una fecha fija (vence_fecha)
+VIGENCIA = {0: "No vence", 6: "Cada 6 meses", 12: "Anual (cada 12 meses)", 24: "Cada 2 años", 36: "Cada 3 años",
+            VIGENCIA_FECHA: "Hasta una fecha específica"}
 ATENCION = {"elegir": "El chofer elige: con o sin cámara",
             "camara": "Solo con control de atención (cámara)",
             "sin": "Solo sin cámara"}
@@ -155,9 +158,14 @@ def actualizar(slug, f):
     curso["atencion"] = f.get("atencion") if f.get("atencion") in ATENCION else "elegir"
     curso["acceso"] = f.get("acceso") if f.get("acceso") in ACCESO else "abierto"
     try:
-        curso["vigencia_meses"] = max(0, min(120, int(f.get("vigencia_meses") or 0)))
+        curso["vigencia_meses"] = max(VIGENCIA_FECHA, min(120, int(f.get("vigencia_meses") or 0)))
     except ValueError:
         pass
+    if curso.get("vigencia_meses") == VIGENCIA_FECHA:
+        try:
+            curso["vence_fecha"] = date.fromisoformat(str(f.get("vence_fecha") or "")).isoformat()
+        except ValueError:
+            raise ValueError("Elegí la fecha de vencimiento del curso.")
     try:
         curso["min_segundos"] = max(0, min(7200, int(f.get("min_segundos") or 0)))
     except ValueError:

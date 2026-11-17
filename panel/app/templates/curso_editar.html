@@ -24,9 +24,13 @@
     <label>Quién lo puede hacer<select name="acceso">
       {% for k, v in acceso.items() %}<option value="{{ k }}" {{ 'selected' if (c.acceso or 'abierto') == k }}>{{ v }}</option>{% endfor %}
     </select></label>
-    <label>Vigencia (cuándo hay que repetirlo)<select name="vigencia_meses">
+    <label>Vigencia (cuándo hay que repetirlo)<select name="vigencia_meses" id="vigencia"
+        onchange="document.getElementById('vence-box').hidden = this.value !== '-1'">
       {% for k, v in vigencia.items() %}<option value="{{ k }}" {{ 'selected' if (c.vigencia_meses or 0) == k }}>{{ v }}</option>{% endfor %}
     </select></label>
+    <label id="vence-box" {{ '' if c.vigencia_meses == -1 else 'hidden' }}>Vence el
+      <input type="date" name="vence_fecha" value="{{ c.vence_fecha or '' }}">
+      <span class="suave">Lo aprobado antes de esta fecha vence ese día (se avisa 30 días antes); lo aprobado después no vence.</span></label>
   </div>
   <label class="switch"><input type="checkbox" name="habilitado" value="1" {{ 'checked' if c.habilitado }}> Curso habilitado (visible para los choferes)</label>
   <label class="switch"><input type="checkbox" name="mostrar_camara" value="1" {{ 'checked' if c.mostrar_camara }}> Mostrar al chofer la cámara y el indicador de atención (destildado: no ve nada, pero se mide igual)</label>

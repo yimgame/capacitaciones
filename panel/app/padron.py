@@ -3,7 +3,7 @@
 Estado de un chofer en un curso asignado (se calcula, no se guarda):
   aprobado    aprobó después de la asignación / del último "recursar", y todavía no venció
   por_vencer  aprobado, pero vence en los próximos 30 días (cursos con vigencia)
-  vencido     aprobó, pero pasó la vigencia del curso (ej. anual): lo tiene que volver a hacer
+  vencido     aprobó, pero pasó la vigencia del curso (ej. anual, o la fecha de corte): lo tiene que volver a hacer
   atrasado    no aprobó y pasó la fecha límite
   pendiente   no aprobó todavía (puede tener intentos desaprobados)
 """
@@ -405,8 +405,14 @@ def estado(asig, resultados, curso, hoy=None):
     if aprobados:
         ap = _fecha_local(aprobados[-1]["fecha"]).date()
         out["aprobado_el"] = ap.isoformat()
-        if meses:
+        vence = None
+        if meses > 0:
             vence = _sumar_meses(ap, meses)
+        elif meses == cursos.VIGENCIA_FECHA and curso.get("vence_fecha"):
+            # fecha de corte: lo aprobado antes de esa fecha vence ese día; lo aprobado después no vence
+            corte = date.fromisoformat(curso["vence_fecha"])
+            vence = corte if ap < corte else None
+        if vence:
             out["vence"] = vence.isoformat()
             if vence <= hoy:
                 out["estado"] = "vencido"

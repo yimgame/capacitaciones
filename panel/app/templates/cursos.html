@@ -16,7 +16,7 @@
         <td><a href="/{{ c.slug }}" target="_blank">/{{ c.slug }}</a></td>
         <td>{{ '🟢 Habilitado' if c.habilitado else '⚪ Deshabilitado' }}</td>
         <td>{{ 'Solo asignados' if c.acceso == 'asignados' else 'Abierto' }}</td>
-        <td>{{ {0: 'No vence', 6: '6 meses', 12: 'Anual', 24: '2 años', 36: '3 años'}.get(c.vigencia_meses or 0, (c.vigencia_meses ~ ' meses')) }}</td>
+        <td>{% if c.vigencia_meses == -1 %}Hasta el {{ (c.vence_fecha or '').split('-')|reverse|join('/') }}{% else %}{{ {0: 'No vence', 6: '6 meses', 12: 'Anual', 24: '2 años', 36: '3 años'}.get(c.vigencia_meses or 0, (c.vigencia_meses ~ ' meses')) }}{% endif %}</td>
         <td>{{ {'elegir': 'Con y sin cámara', 'camara': 'Solo con cámara', 'sin': 'Solo sin cámara'}[c.atencion] }}</td>
         <td>{{ 'Se ven' if c.mostrar_camara else 'Ocultos' }}</td>
         <td>{{ c.videos|length }}</td>
