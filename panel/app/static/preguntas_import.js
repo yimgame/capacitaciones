@@ -76,6 +76,14 @@
       }
     }
     cerrar();
+    // Si a TODAS les falta la respuesta, el problema es uno solo: no vino la clave.
+    const sinResp = errores.filter((e) => e.includes("falta la respuesta correcta")).length;
+    if (sinResp && !Object.keys(clave).length && sinResp === errores.length && !preguntas.length) {
+      errores.length = 0;
+      errores.push(`Leí ${sinResp} preguntas pero ninguna trae la respuesta correcta. Si las respuestas están en otra hoja ` +
+                   `(ej. «respuestas» con Preg. | Resp.), subí el archivo Excel entero en «Planilla», o pegá también esa tabla ` +
+                   `debajo de las preguntas.`);
+    }
     return { preguntas, errores, temas };
   }
 
@@ -142,16 +150,26 @@
     return { ...r, formato: hojaClave ? `texto + clave (hoja «${hojaClave}», ${Object.keys(clave).length} respuestas)` : "texto" };
   }
 
-  // Texto pegado: las preguntas y, opcionalmente, una clave al final ("1 a, 2 b, 3 c" o "1-a 2-b").
+  // Texto pegado: las preguntas y, en cualquier lugar, la clave: la tabla "Preg. | Resp." copiada de Excel
+  // (pares Nº<tab>letra), o líneas como "1 a, 2 b, 3 c" / "1-a 2-b" (con o sin un título "Clave:" arriba).
+  const RE_LINEA_CLAVE = /^(?:\s*\d{1,4}\s*[.)\-:=]?\s*[a-h](?![a-z0-9])[\s,;]*)+$/i;
+  const RE_TITULO_CLAVE = /^\s*((preg(unta)?|resp(uesta)?|n[ºo°]?|clave|respuestas)[\s.:\t|]*)+$/i;
   function desdePegado(texto) {
     const clave = {};
-    const m = texto.match(/\n\s*(?:clave|respuestas)\s*:?\s*\n?([\s\S]*)$/i);
-    let cuerpo = texto;
-    if (m) {
-      for (const p of m[1].matchAll(/(\d{1,4})\s*[.)\-:=]?\s*([a-h])\b/gi)) clave[Number(p[1])] = p[2].toLowerCase();
-      cuerpo = texto.slice(0, m.index);
+    const cuerpo = [];
+    for (let linea of String(texto).split(/\r?\n/)) {
+      // Excel, al copiar una celda con comillas o saltos de línea, la envuelve en "…" y duplica las de adentro
+      linea = linea.split("\t").map((c) => (/^".*"$/s.test(c) ? c.slice(1, -1).replace(/""/g, '"') : c)).join("\t");
+      const sinTab = linea.replace(/\t+/g, " ");
+      if (RE_TITULO_CLAVE.test(linea) && /[a-z]/i.test(linea)) continue;   // "Preg.	Resp.	Preg.	Resp." / "Clave:"
+      if (RE_LINEA_CLAVE.test(sinTab)) {
+        for (const p of sinTab.matchAll(/(\d{1,4})\s*[.)\-:=]?\s*([a-h])(?![a-z0-9])/gi)) clave[Number(p[1])] = p[2].toLowerCase();
+        continue;
+      }
+      cuerpo.push(linea);
     }
-    return { ...desdeTexto(cuerpo.split(/\r?\n/), clave), formato: Object.keys(clave).length ? "texto pegado + clave" : "texto pegado" };
+    const n = Object.keys(clave).length;
+    return { ...desdeTexto(cuerpo, clave), formato: n ? `texto pegado + clave (${n} respuestas)` : "texto pegado (sin clave)" };
   }
 
   const api = { desdeLibro, desdePegado, desdeTexto, desdeTabla, claveDeFilas, separarOpciones };

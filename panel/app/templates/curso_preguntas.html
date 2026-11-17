@@ -28,14 +28,15 @@
       La respuesta sale de una <b>hoja de clave</b> con pares <i>Nº | letra</i> (ej. <i>Preg. | Resp.</i>), de <code>Respuesta: b</code> en el texto,
       o marcando la correcta con <code>*</code> (ej. <code>*b) 80 km/h</code>).</li>
     <li><b>Planilla en columnas</b>: <i>Pregunta | Correcta | Incorrecta 1 | Incorrecta 2…</i> o <i>Pregunta | A | B | C | D | Respuesta</i> (letra).</li>
-    <li><b>Texto pegado</b>: las preguntas y, al final, una línea <code>Clave:</code> seguida de <code>1 a, 2 b, 3 c…</code></li>
+    <li><b>Texto pegado</b>: copiá las preguntas <b>y también la tabla de respuestas</b> (<i>Preg. | Resp.</i>) desde Excel y pegá todo junto,
+      o agregá al final <code>Clave:</code> con <code>1 a, 2 b, 3 c…</code>. Si las respuestas están en otra hoja, lo más fácil es subir el archivo entero.</li>
   </ul>
   <div class="fila-form">
     <label>Planilla (.xlsx, .xls, .csv)<input type="file" id="m-archivo" accept=".xlsx,.xls,.csv,.ods,.txt"></label>
     <label>Qué hacer<select id="m-modo"><option value="agregar">Agregar a las preguntas actuales (saltea repetidas)</option>
       <option value="reemplazar">Reemplazar todas las preguntas del curso</option></select></label>
   </div>
-  <textarea id="m-texto" rows="6" class="mono" placeholder="…o pegá acá el texto de las preguntas"></textarea>
+  <textarea id="m-texto" rows="6" class="mono" placeholder="…o pegá acá las preguntas y, debajo, la tabla de respuestas (Preg. / Resp.)"></textarea>
   <div class="fila-form" style="margin-top:8px">
     <button type="button" id="m-leer">🔍 Leer</button>
     <button type="button" class="primario" id="m-cargar" disabled>➕ Pasar al editor</button>
@@ -62,7 +63,7 @@
 </style>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="{{ P }}/static/preguntas_import.js?v=1"></script>
+<script src="{{ P }}/static/preguntas_import.js?v=2"></script>
 <script>
 const P = "{{ P }}", SLUG = "{{ c.slug }}", MAX_INC = 5;
 const INICIAL = {{ datos | tojson }};
