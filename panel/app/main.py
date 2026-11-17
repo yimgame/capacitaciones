@@ -62,6 +62,7 @@ def _requiere(req, permiso=None):
         raise HTTPException(303, headers={"Location": PREFIJO + "/login"})
     if permiso and permiso not in u["puede"]:
         raise HTTPException(403, "Tu usuario no tiene permiso para esto")
+    cursos.USUARIO.set(u["usuario"])          # queda en el historial de los cursos
     return u
 
 
@@ -185,7 +186,7 @@ async def chofer(req: Request, dni: str, demo: str = ""):
         "nacimiento": filas[-1]["nacimiento"],
         "evaluaciones": [{
             "fecha": f["fecha"].strftime("%d/%m/%Y %H:%M"), "fuente": datos.FUENTES[f["fuente"]],
-            "curso": (cursos.obtener(f["curso"]) or {}).get("titulo", f["curso"]),
+            "curso": (cursos.obtener(f["curso"]) or {}).get("titulo", f["curso"]) + (f" (v{f['version']})" if f.get("version") else ""),
             "puntaje": f["puntaje"], "correctas": f["correctas"], "total": f["total"], "aprobado": f["aprobado"],
             "atencion": f["atencion"], "distracciones": f["distracciones"], "salidas": f["salidas"],
             "minutos_estudio": round(f["seg_estudio"] / 60, 1) if f["seg_estudio"] else None,
@@ -384,7 +385,8 @@ def cursos_accion(req: Request, accion: str = Form(...), slug: str = Form(""), t
 def _editor(req, u, c, error=None, msg=None, status=200):
     return plantillas.TemplateResponse(req, "curso_editar.html", {
         "u": u, "c": c, "material_texto": cursos.material_a_texto(c["material"]), "atencion": cursos.ATENCION,
-        "acceso": cursos.ACCESO, "vigencia": cursos.VIGENCIA,
+        "acceso": cursos.ACCESO, "vigencia": cursos.VIGENCIA, "corte": cursos.fecha_corte(c),
+        "asignados": len(padron.dnis_asignados(c["slug"])),
         "error": error, "msg": msg, "extensiones": ",".join(cursos.EXTENSIONES)}, status_code=status)
 
 
@@ -394,8 +396,12 @@ def curso_editar(req: Request, slug: str, msg: str = ""):
     c = cursos.obtener(slug)
     if not c:
         raise HTTPException(404, "No existe ese curso")
-    return _editor(req, u, c, msg={"guardado": "Cambios guardados.", "video": "Video agregado.",
-                                   "quitado": "Recurso quitado."}.get(msg))
+    return _editor(req, u, c, msg={"guardado": "Cambios guardados.", "video": "Video agregado.", "link": "Link agregado.",
+                                   "quitado": "Recurso quitado.",
+                                   "version": f"Guardado como versión nueva v{c.get('version')}.",
+                                   "version_recursar": f"Guardado como versión nueva v{c.get('version')}: "
+                                                       f"{req.query_params.get('n', '0')} chofer(es) lo tienen que volver a hacer.",
+                                   "restaurado": "Revisión restaurada."}.get(msg))
 
 
 @app.post(PREFIJO + "/cursos/{slug}", response_class=HTMLResponse)
@@ -411,13 +417,46 @@ async def curso_guardar(req: Request, slug: str):
         if accion == "quitar":
             cursos.quitar_recurso(slug, f.get("vid", ""))
             return RedirectResponse(f"{PREFIJO}/cursos/{slug}?msg=quitado", 303)
-        cursos.actualizar(slug, {k: str(v) for k, v in f.items()})
+        if accion == "link":
+            cursos.agregar_link(slug, f.get("url", ""), f.get("titulo_link", ""))
+            return RedirectResponse(f"{PREFIJO}/cursos/{slug}?msg=link", 303)
+        c = cursos.actualizar(slug, {k: str(v) for k, v in f.items()})
+        if f.get("nueva_version") == "1" and f.get("recursar_todos") == "1":
+            n = padron.recursar(slug, padron.dnis_asignados(slug), None, u["usuario"])
+            return RedirectResponse(f"{PREFIJO}/cursos/{slug}?msg=version_recursar&n={n}", 303)
+        if f.get("nueva_version") == "1":
+            return RedirectResponse(f"{PREFIJO}/cursos/{slug}?msg=version", 303)
     except ValueError as e:
         c = cursos.obtener(slug)
         if not c:
             raise HTTPException(404, "No existe ese curso")
         return _editor(req, u, c, error=str(e), status=400)
     return RedirectResponse(f"{PREFIJO}/cursos/{slug}?msg=guardado", 303)
+
+
+# ------------------------------------------------------------------ cursos: historial de versiones
+@app.get(PREFIJO + "/cursos/{slug}/historial", response_class=HTMLResponse)
+def curso_historial(req: Request, slug: str, faltan: str = ""):
+    u = _requiere(req, "cursos")
+    c = cursos.obtener(slug)
+    if not c:
+        raise HTTPException(404, "No existe ese curso")
+    return plantillas.TemplateResponse(req, "curso_historial.html", {"u": u, "c": c, "historial": cursos.historial(slug),
+                                                                     "faltan": faltan})
+
+
+@app.post(PREFIJO + "/cursos/{slug}/historial")
+def curso_restaurar(req: Request, slug: str, revision: int = Form(...)):
+    _mismo_origen(req)
+    _requiere(req, "cursos")
+    try:
+        faltan = cursos.restaurar(slug, revision)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if faltan:
+        from urllib.parse import quote
+        return RedirectResponse(f"{PREFIJO}/cursos/{slug}/historial?faltan={quote(' · '.join(faltan))}", 303)
+    return RedirectResponse(f"{PREFIJO}/cursos/{slug}?msg=restaurado", 303)
 
 
 # ------------------------------------------------------------------ cursos: preguntas de la evaluación
@@ -429,6 +468,7 @@ def preguntas_editar(req: Request, slug: str):
         raise HTTPException(404, "No existe ese curso")
     return plantillas.TemplateResponse(req, "curso_preguntas.html", {
         "u": u, "c": c, "banco_ley_total": BANCO_TOTAL,
+        "asignados": len(padron.dnis_asignados(slug)),
         "datos": {"preguntas": c.get("preguntas") or [], "preguntas_por_examen": c.get("preguntas_por_examen", 10),
                   "aprobacion": c.get("aprobacion", 70)}})
 
@@ -444,11 +484,16 @@ def preguntas_ley(req: Request):
 async def preguntas_guardar(req: Request, slug: str):
     _mismo_origen(req)
     _requiere(req, "cursos")
+    b = await req.json()
     try:
-        c = cursos.guardar_evaluacion(slug, await req.json())
+        c = cursos.guardar_evaluacion(slug, b)
     except ValueError as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
-    return {"ok": True, "preguntas": c["preguntas"]}
+    n = 0
+    if b.get("nueva_version") and b.get("recursar_todos"):
+        n = padron.recursar(slug, padron.dnis_asignados(slug), None, _usuario(req)["usuario"])
+    return {"ok": True, "preguntas": c["preguntas"], "version": c.get("version"), "revision": c.get("revision"),
+            "modificado": c.get("modificado"), "recursados": n}
 
 
 # ------------------------------------------------------------------ padrón: choferes y transportes

@@ -6,7 +6,11 @@
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 
 <form method="post" class="tarjeta editor" id="f-curso">
-  <h1>{{ c.titulo }} <span class="suave">/{{ c.slug }}</span></h1>
+  <h1>{{ c.titulo }} <span class="suave">/{{ c.slug }}</span> <span class="version">v{{ c.version or 1 }}</span></h1>
+  {% macro fh(iso) %}{{ iso[8:10] }}/{{ iso[5:7] }}/{{ iso[0:4] }} {{ iso[11:16] }}{% endmacro %}
+  <p class="suave">Versión <b>v{{ c.version or 1 }}</b>{% if c.version_fecha %} del {{ fh(c.version_fecha) }}{% endif %}
+    {% if c.modificado %}· último guardado {{ fh(c.modificado) }}{% if c.modificado_por %} por <b>{{ c.modificado_por }}</b>{% endif %} (revisión {{ c.revision }}){% endif %}
+    · <a href="{{ P }}/cursos/{{ c.slug }}/historial">🕘 Historial y versiones</a></p>
   <div class="dos-col">
     <label>Título<input name="titulo" value="{{ c.titulo }}" maxlength="120" required></label>
     <label>Orden en la lista<input name="orden" type="number" value="{{ c.orden }}"></label>
@@ -24,13 +28,17 @@
     <label>Quién lo puede hacer<select name="acceso">
       {% for k, v in acceso.items() %}<option value="{{ k }}" {{ 'selected' if (c.acceso or 'abierto') == k }}>{{ v }}</option>{% endfor %}
     </select></label>
-    <label>Vigencia (cuándo hay que repetirlo)<select name="vigencia_meses" id="vigencia"
-        onchange="document.getElementById('vence-box').hidden = this.value !== '-1'">
+    <label>Vigencia (cuándo hay que repetirlo)<select name="vigencia_meses" id="vigencia" onchange="vigenciaUI()">
       {% for k, v in vigencia.items() %}<option value="{{ k }}" {{ 'selected' if (c.vigencia_meses or 0) == k }}>{{ v }}</option>{% endfor %}
     </select></label>
     <label id="vence-box" {{ '' if c.vigencia_meses == -1 else 'hidden' }}>Vence el
       <input type="date" name="vence_fecha" value="{{ c.vence_fecha or '' }}">
       <span class="suave">Lo aprobado antes de esta fecha vence ese día (se avisa 30 días antes); lo aprobado después no vence.</span></label>
+    <label id="desde-box">Contar la vigencia desde<select name="vigencia_desde" id="vigencia-desde" onchange="vigenciaUI()">
+      <option value="aprobacion" {{ 'selected' if c.vigencia_desde != 'version' }}>Que aprueba cada chofer (cada uno tiene su fecha)</option>
+      <option value="version" {{ 'selected' if c.vigencia_desde == 'version' }}>La fecha de la versión del curso (fecha igual para todos)</option>
+    </select>
+      <span class="suave" id="corte-txt">{% if corte %}Con la versión v{{ c.version or 1 }} vence el <b>{{ corte.strftime('%d/%m/%Y') }}</b>: lo aprobado antes de esa fecha vence ese día.{% endif %}</span></label>
   </div>
   <label class="switch"><input type="checkbox" name="habilitado" value="1" {{ 'checked' if c.habilitado }}> Curso habilitado (visible para los choferes)</label>
   <label class="switch"><input type="checkbox" name="mostrar_camara" value="1" {{ 'checked' if c.mostrar_camara }}> Mostrar al chofer la cámara y el indicador de atención (destildado: no ve nada, pero se mide igual)</label>
@@ -39,7 +47,8 @@
   <p><a class="boton" href="{{ P }}/cursos/{{ c.slug }}/preguntas">📝 Editar preguntas y respuestas</a></p>
 
   <h2>Material de estudio</h2>
-  <p class="suave">Una línea que empieza con <code>#</code> es un título; cada línea de abajo es un punto de la lista.</p>
+  <p class="suave">Una línea que empieza con <code>#</code> es un título; cada línea de abajo es un punto de la lista.
+    Los links (<code>https://…</code>) quedan clickeables; también podés escribir <code>[Ley de Tránsito 24.449](https://…)</code>.</p>
   <textarea name="material" rows="16" class="mono">{{ material_texto }}</textarea>
 
   <h2>Videos y archivos <span class="suave">({{ c.videos|length }})</span></h2>
@@ -49,13 +58,22 @@
     <tbody>{% for v in c.videos %}
       <tr><td><input name="v_orden_{{ v.id }}" type="number" value="{{ v.orden }}" style="width:70px"></td>
         <td><input name="v_titulo_{{ v.id }}" value="{{ v.titulo }}" maxlength="120"></td>
-        <td>{{ {'video':'🎬 Video','youtube':'▶️ YouTube','documento':'📄 PDF','imagen':'🖼️ Imagen'}[v.tipo] }}</td>
+        <td>{{ {'video':'🎬 Video','youtube':'▶️ YouTube','documento':'📄 PDF','imagen':'🖼️ Imagen','link':'🔗 Link'}[v.tipo] }}</td>
         <td class="suave">{% if v.tipo == 'youtube' %}<a href="https://youtu.be/{{ v.youtube }}" target="_blank">{{ v.youtube }}</a>
+            {% elif v.tipo == 'link' %}<a href="{{ v.url }}" target="_blank" rel="noopener">{{ v.url[:60] }}</a>
             {% else %}<a href="/recursos/{{ v.archivo }}" target="_blank">{{ v.archivo.split('/')[-1] }}</a>{% endif %}</td>
         <td><button class="chico" form="f-quitar" name="vid" value="{{ v.id }}" onclick="return confirm('¿Quitar «{{ v.titulo }}» del curso?')">🗑 Quitar</button></td></tr>
     {% endfor %}</tbody></table></div>
   {% else %}<p class="suave">Todavía no tiene videos.</p>{% endif %}
 
+  <div class="tarjeta" style="margin:14px 0 0;background:var(--bg)">
+    <label class="switch"><input type="checkbox" name="nueva_version" value="1" id="nueva-version"
+      onchange="document.getElementById('recursar-box').hidden = !this.checked"> Guardar como <b>versión nueva v{{ (c.version or 1) + 1 }}</b>
+      <span class="suave">(para cambios de contenido; una corrección chica no hace falta)</span></label>
+    <label class="switch" id="recursar-box" hidden><input type="checkbox" name="recursar_todos" value="1"
+      onchange="if (this.checked && !confirm('Los {{ asignados }} chofer(es) que tienen asignado este curso lo van a tener que volver a hacer. ¿Seguro?')) this.checked = false">
+      Que los <b>{{ asignados }}</b> chofer(es) asignados lo vuelvan a hacer con la versión nueva</label>
+  </div>
   <button class="primario" style="margin-top:14px">💾 Guardar cambios</button>
 </form>
 <form method="post" id="f-quitar"><input type="hidden" name="accion" value="quitar"></form>
@@ -74,6 +92,18 @@
 </div>
 
 <div class="tarjeta">
+  <h2>Agregar un link</h2>
+  <p class="suave">Una página o un PDF de internet (ej. la ley en argentina.gob.ar). Se abre en una pestaña nueva.
+    Para que un PDF se vea dentro del curso, bajalo y subilo arriba en «Subir video o archivo».</p>
+  <form method="post" class="fila-form">
+    <input type="hidden" name="accion" value="link">
+    <label>Link<input name="url" type="url" placeholder="https://www.argentina.gob.ar/normativa/nacional/…" required></label>
+    <label>Título<input name="titulo_link" placeholder="Ej. Ley Nacional de Tránsito 24.449"></label>
+    <button class="primario">Agregar</button>
+  </form>
+</div>
+
+<div class="tarjeta">
   <h2>Agregar video de YouTube</h2>
   <form method="post" class="fila-form">
     <input type="hidden" name="accion" value="youtube">
@@ -83,7 +113,16 @@
   </form>
 </div>
 
+<style>.version { font-size:14px; background:var(--azul); color:#fff; border-radius:6px; padding:2px 8px; vertical-align:middle; }</style>
 <script>
+function vigenciaUI() {
+  const v = document.getElementById("vigencia").value;
+  document.getElementById("vence-box").hidden = v !== "-1";
+  document.getElementById("desde-box").hidden = !(Number(v) > 0);
+  const t = document.getElementById("corte-txt");
+  if (t) t.hidden = document.getElementById("vigencia-desde").value !== "version";
+}
+vigenciaUI();
 const P = "{{ P }}", SLUG = "{{ c.slug }}", PARTE = 32 * 1024 * 1024;
 const $ = (id) => document.getElementById(id);
 $("b-subir").onclick = async () => {

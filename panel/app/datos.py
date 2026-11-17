@@ -46,7 +46,7 @@ def normalizar(crudo):
                 fuente = "formulario"
             camara = fuente == "camara"
             filas.append({
-                "fuente": fuente, "fecha": fecha, "curso": r.get("curso") or "cursomanejo",
+                "fuente": fuente, "fecha": fecha, "curso": r.get("curso") or "cursomanejo", "version": r.get("curso_version"),
                 "nombre": (r.get("nombre") or "").strip().title(),
                 "dni": str(r.get("dni") or ""), "celular": r.get("celular") or "",
                 "empresa_orig": (r.get("empresa") or "").strip(),

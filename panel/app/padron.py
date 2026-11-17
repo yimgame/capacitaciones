@@ -375,6 +375,12 @@ def recursar(curso, dnis, limite, por):
     return n
 
 
+def dnis_asignados(curso):
+    with closing(con()) as c:
+        return [r[0] for r in c.execute("""SELECT a.dni FROM asignaciones a JOIN choferes ch ON ch.dni=a.dni
+                                           WHERE a.curso=? AND ch.activo=1""", (curso,))]
+
+
 def asignacion(curso, dni):
     with closing(con()) as c:
         r = c.execute("SELECT * FROM asignaciones WHERE curso=? AND dni=?", (curso, dni)).fetchone()
@@ -406,12 +412,12 @@ def estado(asig, resultados, curso, hoy=None):
         ap = _fecha_local(aprobados[-1]["fecha"]).date()
         out["aprobado_el"] = ap.isoformat()
         vence = None
-        if meses > 0:
-            vence = _sumar_meses(ap, meses)
-        elif meses == cursos.VIGENCIA_FECHA and curso.get("vence_fecha"):
-            # fecha de corte: lo aprobado antes de esa fecha vence ese día; lo aprobado después no vence
-            corte = date.fromisoformat(curso["vence_fecha"])
-            vence = corte if ap < corte else None
+        if meses > 0 and curso.get("vigencia_desde") != "version":
+            vence = _sumar_meses(ap, meses)               # cuenta desde que aprobó cada chofer
+        else:
+            # fecha de corte (elegida, o fecha de la versión + N meses): lo aprobado antes vence ese día
+            corte = cursos.fecha_corte(curso)
+            vence = corte if corte and ap < corte else None
         if vence:
             out["vence"] = vence.isoformat()
             if vence <= hoy:

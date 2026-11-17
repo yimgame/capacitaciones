@@ -22,7 +22,7 @@ VENCE_SESION = 24 * 3600
 
 COLUMNAS = ["fecha", "nombre", "dni", "celular", "empresa", "fecha_nacimiento", "curso", "modo", "correctas", "total",
             "puntaje", "aprobado", "errores", "consentimiento", "atencion_pct", "distracciones", "salidas_pantalla",
-            "segundos_estudio", "segundos_sin_atencion", "dispositivo"]
+            "segundos_estudio", "segundos_sin_atencion", "dispositivo", "curso_version"]
 
 
 def iniciar():
@@ -37,6 +37,9 @@ def iniciar():
             distracciones INTEGER, salidas_pantalla INTEGER, segundos_estudio INTEGER,
             segundos_sin_atencion INTEGER, dispositivo TEXT)""")
         c.execute("CREATE INDEX IF NOT EXISTS resultados_fecha ON resultados(fecha)")
+        for tabla in ("examen_sesiones", "resultados"):          # 2026-11-17: qué versión del curso rindió
+            if "curso_version" not in {r["name"] for r in c.execute(f"PRAGMA table_info({tabla})")}:
+                c.execute(f"ALTER TABLE {tabla} ADD COLUMN curso_version INTEGER")
 
 
 def _mezclar(lista):
@@ -100,9 +103,11 @@ def inicio(b):
     ahora = time.time()
     with closing(cursos.con()) as c, c:
         c.execute("DELETE FROM examen_sesiones WHERE creado < ?", (ahora - VENCE_SESION,))
-        c.execute("INSERT INTO examen_sesiones VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        c.execute("""INSERT INTO examen_sesiones (sesion, creado, curso, modo, nombre, dni, celular, empresa,
+                     fecha_nacimiento, preguntas, aprobacion, curso_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                   (sesion, ahora, slug, modo, nombre, dni, celular, empresa, nacimiento,
-                   json.dumps(elegidas, ensure_ascii=False), curso.get("aprobacion", cursos.APROBACION)))
+                   json.dumps(elegidas, ensure_ascii=False), curso.get("aprobacion", cursos.APROBACION),
+                   curso.get("version", 1)))
     return {"ok": True, "sesion": sesion,
             "preguntas": [{"n": i, "pregunta": p["pregunta"], "opciones": p["opciones"]} for i, p in enumerate(elegidas)]}
 
@@ -141,7 +146,7 @@ def fin(b):
         "salidas_pantalla": _num(a.get("salidas"), 9999) if camara else None,
         "segundos_estudio": _num(a.get("segundos"), 86400),
         "segundos_sin_atencion": _num(a.get("segundosSinAtencion"), 86400) if camara else None,
-        "dispositivo": str(b.get("dispositivo") or "")[:120],
+        "dispositivo": str(b.get("dispositivo") or "")[:120], "curso_version": s["curso_version"],
     }
     with closing(cursos.con()) as c, c:
         c.execute(f"INSERT INTO resultados ({','.join(COLUMNAS)}) VALUES ({','.join('?' * len(COLUMNAS))})",

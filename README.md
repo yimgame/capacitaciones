@@ -21,6 +21,11 @@ Sin servicios externos.
   **preguntas y respuestas propias** (editor o **carga masiva** desde planilla/texto: "1. ¿…? a) … b) …" con hoja
   de clave, o columnas Pregunta | Correcta | Incorrectas), o el banco de la Ley Nacional de Tránsito 24.449; cantidad de preguntas,
   % para aprobar, **acceso abierto o solo asignados**, **vigencia** (anual, cada N meses o sin vencimiento).
+- **Versiones de cada curso**: historial de cada guardado (fecha, hora, quién, qué cambió) con restaurar;
+  versión v1, v2… cuando se publica una nueva (opcional: que todos los asignados lo vuelvan a hacer); cada
+  resultado guarda la versión que rindió el chofer. Vigencia contada desde que aprueba cada chofer o desde la
+  fecha de la versión (fecha igual para todos), o hasta una fecha fija.
+- **Material**: texto con links, videos (subidos o YouTube), PDF que se ven en la misma pantalla, imágenes y links.
 - **Choferes**: alta de a uno o **importación de archivos** (.xlsx, .xls, .csv, .txt) o pegado desde Excel,
   con revisión antes de guardar.
 - **Importar desde los sistemas**: maestro de proveedores (transportes, nº de proveedor, JRT, CUIT, contacto),

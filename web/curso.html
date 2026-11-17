@@ -30,6 +30,11 @@ button:disabled { opacity:.45; cursor:not-allowed; }
 .modos { display:grid; gap:10px; margin-top:12px; } .modo { text-align:left; background:var(--bg); color:var(--txt); border:2px solid var(--borde); margin:0; }
 .modo:hover { border-color:var(--acento); } .modo b { display:block; font-size:17px; } .modo span { font-weight:400; font-size:14px; color:var(--suave); }
 .recurso { margin:8px 0 14px; } .recurso img { max-width:100%; border-radius:8px; }
+.pdf { width:100%; height:70vh; border:1px solid var(--borde); border-radius:8px; overflow:hidden; margin:8px 0; background:#fff; }
+.pdf iframe { width:100%; height:100%; border:0; }
+a.boton { display:block; text-align:center; font-weight:600; padding:12px; border-radius:10px; border:1px solid var(--acento);
+          color:var(--acento); text-decoration:none; margin:8px 0 14px; }
+.material a { color:var(--acento); }
 #preview { width:96px; height:72px; border-radius:8px; object-fit:cover; transform:scaleX(-1); background:#000; }
 .camara { position:sticky; top:8px; z-index:5; display:flex; gap:10px; align-items:center; background:var(--panel); border:1px solid var(--borde); border-radius:12px; padding:8px; margin-bottom:12px; }
 .estado { font-weight:600; } .estado.ok { color:var(--ok); } .estado.mal { color:var(--aviso); }
@@ -308,6 +313,19 @@ function apagarCamara() {
 }
 
 // ----------------------------------------------------------------- estudio
+const MOVIL = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);   // en el celular los PDF no se ven dentro de la página
+// Texto del material con links: [texto](https://…) o https://… sueltos (todo lo demás, escapado).
+function conLinks(t) {
+  let out = "", i = 0;
+  const re = /\[([^\]]{1,200})\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>"]+[^\s<>".,;:!?)])/g;
+  for (const m of String(t).matchAll(re)) {
+    out += esc(t.slice(i, m.index));
+    const url = m[2] || m[3], txt = m[1] || m[3];
+    out += `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(txt)} ↗</a>`;
+    i = m.index + m[0].length;
+  }
+  return out + esc(t.slice(i));
+}
 function armarEstudio() {
   estado.inicioEstudio = Date.now();
   $("videos").innerHTML = CURSO.videos.map((v) => {
@@ -315,9 +333,12 @@ function armarEstudio() {
     if (v.tipo === "youtube") return t + `<div class="video"><iframe src="https://www.youtube-nocookie.com/embed/${esc(v.youtube)}" allow="encrypted-media; picture-in-picture" allowfullscreen></iframe></div>`;
     if (v.tipo === "video") return t + `<div class="video"><video src="${esc(v.url)}" controls playsinline preload="metadata"></video></div>`;
     if (v.tipo === "imagen") return t + `<div class="recurso"><img src="${esc(v.url)}" alt="${esc(v.titulo)}" loading="lazy"></div>`;
-    return `<div class="recurso">📄 <a href="${esc(v.url)}" target="_blank" rel="noopener">${esc(v.titulo)}</a></div>`;
+    if (v.tipo === "link") return `<a class="boton" href="${esc(v.url)}" target="_blank" rel="noopener">🔗 ${esc(v.titulo)} ↗</a>`;
+    // PDF: en la compu se ve acá mismo; en el celular, botón para abrirlo
+    return t + (MOVIL ? "" : `<div class="pdf"><iframe src="${esc(v.url)}#view=FitH" title="${esc(v.titulo)}" loading="lazy"></iframe></div>`) +
+      `<a class="boton" href="${esc(v.url)}" target="_blank" rel="noopener">📄 Abrir «${esc(v.titulo)}»${MOVIL ? "" : " en pantalla completa"} ↗</a>`;
   }).join("");
-  $("material").innerHTML = CURSO.material.map((s) => `<h3>${esc(s.titulo)}</h3><ul>${s.items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>`).join("");
+  $("material").innerHTML = CURSO.material.map((s) => `<h3>${conLinks(s.titulo)}</h3><ul>${s.items.map((i) => `<li>${conLinks(i)}</li>`).join("")}</ul>`).join("");
   const fin = Date.now() + (CURSO.min_segundos || 0) * 1000;
   const tic = setInterval(() => {
     const falta = Math.ceil((fin - Date.now()) / 1000);

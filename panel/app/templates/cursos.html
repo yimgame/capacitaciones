@@ -12,11 +12,12 @@
     <tbody>
     {% for c in cursos %}
       <tr class="{{ '' if c.habilitado else 'apagado' }}">
-        <td><b>{{ c.titulo }}</b><div class="suave">{{ c.descripcion[:90] }}</div></td>
+        <td><b>{{ c.titulo }}</b> <span class="suave">v{{ c.version or 1 }}</span><div class="suave">{{ c.descripcion[:90] }}</div>
+          {% if c.modificado %}<div class="suave">Guardado {{ c.modificado[8:10] }}/{{ c.modificado[5:7] }}/{{ c.modificado[0:4] }} {{ c.modificado[11:16] }}{% if c.modificado_por %} · {{ c.modificado_por }}{% endif %}</div>{% endif %}</td>
         <td><a href="/{{ c.slug }}" target="_blank">/{{ c.slug }}</a></td>
         <td>{{ '🟢 Habilitado' if c.habilitado else '⚪ Deshabilitado' }}</td>
         <td>{{ 'Solo asignados' if c.acceso == 'asignados' else 'Abierto' }}</td>
-        <td>{% if c.vigencia_meses == -1 %}Hasta el {{ (c.vence_fecha or '').split('-')|reverse|join('/') }}{% else %}{{ {0: 'No vence', 6: '6 meses', 12: 'Anual', 24: '2 años', 36: '3 años'}.get(c.vigencia_meses or 0, (c.vigencia_meses ~ ' meses')) }}{% endif %}</td>
+        <td>{% if c.vigencia_meses == -1 %}Hasta el {{ (c.vence_fecha or '').split('-')|reverse|join('/') }}{% else %}{{ {0: 'No vence', 6: '6 meses', 12: 'Anual', 24: '2 años', 36: '3 años'}.get(c.vigencia_meses or 0, (c.vigencia_meses ~ ' meses')) }}{{ ' (desde la versión)' if c.vigencia_desde == 'version' and (c.vigencia_meses or 0) > 0 else '' }}{% endif %}</td>
         <td>{{ {'elegir': 'Con y sin cámara', 'camara': 'Solo con cámara', 'sin': 'Solo sin cámara'}[c.atencion] }}</td>
         <td>{{ 'Se ven' if c.mostrar_camara else 'Ocultos' }}</td>
         <td>{{ c.videos|length }}</td>

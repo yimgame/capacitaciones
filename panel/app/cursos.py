@@ -3,9 +3,11 @@
 Cada curso tiene su página en https://<dominio>/<slug> (web/curso.html la arma con este JSON).
 Los videos y archivos se guardan en RECURSOS/<slug>/ (carpeta del NAS, nginx la publica en /recursos/).
 """
+import contextvars
 import json
 import os
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 import re
 import sqlite3
 import time
@@ -13,9 +15,14 @@ from contextlib import closing
 from pathlib import Path
 
 DB = os.environ.get("PANEL_DB", "/data/panel.db")
+TZ = ZoneInfo("America/Argentina/Buenos_Aires")
+# Quién está guardando (lo setea main._requiere): queda en el historial de cada curso.
+USUARIO = contextvars.ContextVar("usuario", default="")
 RECURSOS = Path(os.environ.get("RECURSOS_DIR", "/recursos"))
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,39}$")
 RESERVADOS = {"panel", "api", "recursos", "static", "index", "curso", "favicon.ico"}
+# Campos de control (no son contenido del curso): no cuentan como "cambio" ni se restauran.
+META = ("version", "version_fecha", "version_usuario", "revision", "modificado", "modificado_por")
 EXTENSIONES = {".mp4": "video", ".webm": "video", ".m4v": "video", ".mov": "video",
                ".pdf": "documento", ".jpg": "imagen", ".jpeg": "imagen", ".png": "imagen", ".webp": "imagen"}
 ACCESO = {"abierto": "Abierto: lo puede hacer cualquiera desde la portada",
@@ -77,10 +84,21 @@ def con():
 def iniciar():
     with closing(con()) as c, c:
         c.execute("CREATE TABLE IF NOT EXISTS cursos (slug TEXT PRIMARY KEY, datos TEXT NOT NULL, actualizado REAL)")
+        # Historial: una fila por cada guardado (revisión), con el curso entero para poder restaurarlo.
+        c.execute("""CREATE TABLE IF NOT EXISTS curso_historial (
+            slug TEXT NOT NULL, revision INTEGER NOT NULL, version INTEGER, fecha TEXT NOT NULL, usuario TEXT,
+            cambios TEXT, datos TEXT NOT NULL, PRIMARY KEY (slug, revision))""")
         for curso in INICIALES:
             c.execute("INSERT OR IGNORE INTO cursos VALUES (?, ?, ?)",
                       (curso["slug"], json.dumps(curso, ensure_ascii=False), time.time()))
     RECURSOS.mkdir(parents=True, exist_ok=True)
+    for curso in listar():                     # cursos de antes del versionado: arrancan en v1, revisión 1
+        if "version" not in curso:
+            guardar(curso, nota="Versión inicial (inicio del historial)")
+
+
+def ahora():
+    return datetime.now(TZ).isoformat(timespec="seconds")
 
 
 def listar(solo_habilitados=False):
@@ -96,10 +114,106 @@ def obtener(slug):
     return json.loads(r["datos"]) if r else None
 
 
-def guardar(curso):
+def guardar(curso, nueva_version=False, nota=""):
+    """Guarda el curso y deja una revisión en el historial (si cambió algo). nueva_version: sube vN (y su fecha,
+    que es la que usa la vigencia "desde la versión")."""
+    anterior = obtener(curso["slug"])
+    cambios = resumen_cambios(anterior, curso)
+    if anterior and "version" in anterior and not cambios and not nueva_version and not nota:
+        return curso                                         # nada para registrar
+    hora, quien = ahora(), USUARIO.get() or ""
+    previa = anterior or {}
+    curso["version"] = previa.get("version") or curso.get("version") or 1
+    curso["version_fecha"] = previa.get("version_fecha") or curso.get("version_fecha") or hora
+    curso["version_usuario"] = previa.get("version_usuario") or curso.get("version_usuario") or quien
+    if nueva_version and previa.get("version"):
+        curso["version"] = previa["version"] + 1
+        curso["version_fecha"], curso["version_usuario"] = hora, quien
+        cambios.insert(0, f"Nueva versión v{curso['version']}")
+    curso["revision"] = (previa.get("revision") or 0) + 1
+    curso["modificado"], curso["modificado_por"] = hora, quien
+    texto = "; ".join(([nota] if nota else []) + cambios) or "Guardado sin cambios"
     with closing(con()) as c, c:
         c.execute("INSERT OR REPLACE INTO cursos VALUES (?, ?, ?)",
                   (curso["slug"], json.dumps(curso, ensure_ascii=False), time.time()))
+        c.execute("INSERT OR REPLACE INTO curso_historial VALUES (?,?,?,?,?,?,?)",
+                  (curso["slug"], curso["revision"], curso["version"], hora, quien, texto[:2000],
+                   json.dumps(curso, ensure_ascii=False)))
+    return curso
+
+
+_NOMBRES = {"titulo": "título", "descripcion": "descripción", "acceso": "quién lo puede hacer",
+            "vigencia_meses": "vigencia", "vence_fecha": "fecha de vencimiento", "vigencia_desde": "cómo se cuenta la vigencia",
+            "atencion": "control de atención", "mostrar_camara": "mostrar cámara", "examen": "evaluación",
+            "min_segundos": "tiempo mínimo", "orden": "orden", "preguntas_por_examen": "preguntas por examen",
+            "aprobacion": "% para aprobar"}
+
+
+def resumen_cambios(a, b):
+    """Lista corta de qué cambió entre dos versiones del curso (para el historial)."""
+    if not a:
+        return ["Curso creado"]
+    out = []
+    if a.get("habilitado") != b.get("habilitado"):
+        out.append("Habilitado" if b.get("habilitado") else "Deshabilitado")
+    for k, nombre in _NOMBRES.items():
+        if a.get(k) != b.get(k):
+            out.append(f"Cambió {nombre}")
+    if a.get("material") != b.get("material"):
+        n = lambda m: sum(len(x["items"]) for x in m or [])
+        out.append(f"Material editado ({n(a.get('material'))} → {n(b.get('material'))} puntos)")
+    va = {v["id"]: v for v in a.get("videos", [])}
+    vb = {v["id"]: v for v in b.get("videos", [])}
+    out += [f"Agregó «{vb[i]['titulo']}»" for i in vb if i not in va]
+    out += [f"Quitó «{va[i]['titulo']}»" for i in va if i not in vb]
+    if any(i in va and (va[i].get("titulo"), va[i].get("orden")) != (v.get("titulo"), v.get("orden")) for i, v in vb.items()):
+        out.append("Renombró u ordenó recursos")
+    pa = {q["pregunta"]: q for q in a.get("preguntas", [])}
+    pb = {q["pregunta"]: q for q in b.get("preguntas", [])}
+    mas, menos = len(set(pb) - set(pa)), len(set(pa) - set(pb))
+    mod = sum(1 for k in set(pa) & set(pb) if pa[k] != pb[k])
+    if mas or menos or mod:
+        out.append("Preguntas: " + ", ".join(x for x in (f"+{mas}" if mas else "", f"-{menos}" if menos else "",
+                                                          f"{mod} modificadas" if mod else "") if x) +
+                   f" (total {len(pb)})")
+    return out
+
+
+def historial(slug):
+    with closing(con()) as c:
+        return [dict(r) for r in c.execute("""SELECT slug, revision, version, fecha, usuario, cambios FROM curso_historial
+                                              WHERE slug=? ORDER BY revision DESC""", (slug,))]
+
+
+def restaurar(slug, revision):
+    """Vuelve el contenido a una revisión anterior (queda como revisión nueva; la versión no cambia).
+    No toca habilitado ni el control de versión."""
+    with closing(con()) as c:
+        r = c.execute("SELECT datos FROM curso_historial WHERE slug=? AND revision=?", (slug, revision)).fetchone()
+    actual = obtener(slug)
+    if not r or not actual:
+        raise ValueError("No existe esa revisión.")
+    viejo = json.loads(r["datos"])
+    nuevo = {k: v for k, v in viejo.items() if k not in META and k != "habilitado"}
+    nuevo.update({k: actual[k] for k in META if k in actual}, habilitado=actual.get("habilitado"), slug=slug)
+    faltan = [v["titulo"] for v in nuevo.get("videos", []) if v.get("archivo") and not (RECURSOS / v["archivo"]).is_file()]
+    nuevo["videos"] = [v for v in nuevo.get("videos", []) if not (v.get("archivo") and not (RECURSOS / v["archivo"]).is_file())]
+    guardar(nuevo, nota=f"Restaurada la revisión {revision}")
+    return faltan
+
+
+def fecha_corte(curso):
+    """Vigencia con fecha fija: la elegida a mano o (si se cuenta desde la versión) fecha de la versión + N meses."""
+    meses = int(curso.get("vigencia_meses") or 0)
+    if meses == VIGENCIA_FECHA and curso.get("vence_fecha"):
+        return date.fromisoformat(curso["vence_fecha"])
+    if meses > 0 and curso.get("vigencia_desde") == "version" and curso.get("version_fecha"):
+        d = date.fromisoformat(curso["version_fecha"][:10])
+        m = d.month - 1 + meses
+        a, m = d.year + m // 12, m % 12 + 1
+        import calendar
+        return date(a, m, min(d.day, calendar.monthrange(a, m)[1]))
+    return None
 
 
 def crear(slug, titulo, copiar_de=""):
@@ -109,7 +223,7 @@ def crear(slug, titulo, copiar_de=""):
     if obtener(slug):
         raise ValueError(f"Ya existe un curso con la dirección /{slug}.")
     base = obtener(copiar_de) if copiar_de else None
-    curso = dict(base) if base else _base(slug, titulo or slug, "", 99)
+    curso = {k: v for k, v in base.items() if k not in META} if base else _base(slug, titulo or slug, "", 99)
     curso.update(slug=slug, titulo=(titulo or curso["titulo"]).strip()[:120], videos=[] if not base else
                  [dict(v) for v in base.get("videos", []) if v.get("tipo") == "youtube"], habilitado=False,
                  orden=len(listar()) + 1)
@@ -161,6 +275,7 @@ def actualizar(slug, f):
         curso["vigencia_meses"] = max(VIGENCIA_FECHA, min(120, int(f.get("vigencia_meses") or 0)))
     except ValueError:
         pass
+    curso["vigencia_desde"] = "version" if f.get("vigencia_desde") == "version" else "aprobacion"
     if curso.get("vigencia_meses") == VIGENCIA_FECHA:
         try:
             curso["vence_fecha"] = date.fromisoformat(str(f.get("vence_fecha") or "")).isoformat()
@@ -185,7 +300,7 @@ def actualizar(slug, f):
         except ValueError:
             pass
     curso["videos"].sort(key=lambda v: v.get("orden", 0))
-    guardar(curso)
+    guardar(curso, nueva_version=f.get("nueva_version") == "1")
     return curso
 
 
@@ -229,12 +344,19 @@ def quitar_recurso(slug, vid):
     sacado = next((v for v in curso["videos"] if v["id"] == vid), None)
     curso["videos"] = [v for v in curso["videos"] if v["id"] != vid]
     guardar(curso)
-    if sacado and sacado.get("archivo"):
-        # el archivo se borra solo si ningún otro curso lo usa
-        en_uso = any(v.get("archivo") == sacado["archivo"] for c in listar() for v in c.get("videos", []))
-        p = RECURSOS / sacado["archivo"]
-        if not en_uso and p.is_file() and RECURSOS.resolve() in p.resolve().parents:
-            p.unlink()
+    # El archivo queda en el NAS: el historial lo puede necesitar para restaurar una versión anterior.
+    return curso
+
+
+def agregar_link(slug, url, titulo):
+    url = (url or "").strip()
+    if not re.fullmatch(r"https?://[^\s<>\"']{4,2000}", url):
+        raise ValueError("El link tiene que empezar con http:// o https://")
+    curso = obtener(slug)
+    curso["videos"].append({"id": f"{int(time.time() * 1000):x}", "tipo": "link", "url": url,
+                            "titulo": (titulo or url.split("//", 1)[1].split("/", 1)[0]).strip()[:120],
+                            "orden": len(curso["videos"]) + 1})
+    guardar(curso)
     return curso
 
 
@@ -243,8 +365,10 @@ def publico(curso):
     return {k: curso[k] for k in ("slug", "titulo", "descripcion", "material", "min_segundos", "atencion",
                                   "mostrar_camara", "examen")} | {
         "aprobacion": curso.get("aprobacion", APROBACION), "acceso": curso.get("acceso", "abierto"),
+        "version": curso.get("version", 1),
         "videos": [{"titulo": v["titulo"], "tipo": v["tipo"],
-                    **({"youtube": v["youtube"]} if v["tipo"] == "youtube" else {"url": "/recursos/" + v["archivo"]})}
+                    **({"youtube": v["youtube"]} if v["tipo"] == "youtube" else
+                       {"url": v["url"]} if v["tipo"] == "link" else {"url": "/recursos/" + v["archivo"]})}
                    for v in curso.get("videos", [])]}
 
 
@@ -316,7 +440,7 @@ def guardar_evaluacion(slug, datos):
     if errores:
         raise ValueError(" ".join(errores[:8]) + (f" (y {len(errores) - 8} más)" if len(errores) > 8 else ""))
     curso.update(preguntas=preguntas, preguntas_por_examen=por_examen, aprobacion=aprobacion)
-    guardar(curso)
+    guardar(curso, nueva_version=bool(datos.get("nueva_version")))
     return curso
 
 

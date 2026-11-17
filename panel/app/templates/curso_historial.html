@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block titulo %}Historial · {{ c.titulo }}{% endblock %}
+{% block contenido %}
+<p><a href="{{ P }}/cursos/{{ c.slug }}">← {{ c.titulo }}</a></p>
+{% macro fh(iso) %}{{ iso[8:10] }}/{{ iso[5:7] }}/{{ iso[0:4] }} {{ iso[11:16] }}{% endmacro %}
+<div class="tarjeta">
+  <h1>Historial de «{{ c.titulo }}»</h1>
+  <p class="suave">Versión actual <b>v{{ c.version or 1 }}</b>{% if c.version_fecha %} (del {{ fh(c.version_fecha) }}){% endif %}.
+    Cada vez que se guarda queda una <b>revisión</b> con quién y qué cambió. La <b>versión</b> (v1, v2…) sube solo cuando se guarda
+    marcando «versión nueva». Restaurar vuelve el contenido a esa revisión (queda como una revisión nueva; no cambia la versión ni si
+    el curso está habilitado).</p>
+  {% if faltan %}<p class="aviso">Se restauró, pero estos archivos ya no estaban en el servidor y quedaron afuera: {{ faltan }}</p>{% endif %}
+  <div class="tabla-scroll"><table>
+    <thead><tr><th>Revisión</th><th>Versión</th><th>Fecha</th><th>Quién</th><th>Qué cambió</th><th></th></tr></thead>
+    <tbody>{% for h in historial %}
+      <tr><td>{{ h.revision }}</td><td>v{{ h.version }}</td><td style="white-space:nowrap">{{ fh(h.fecha) }}</td><td>{{ h.usuario or '—' }}</td>
+        <td>{{ h.cambios }}</td>
+        <td>{% if h.revision != c.revision %}<form method="post" onsubmit="return confirm('¿Volver el curso a como estaba en la revisión {{ h.revision }}?')">
+          <input type="hidden" name="revision" value="{{ h.revision }}"><button class="chico">↩ Restaurar</button></form>
+          {% else %}<span class="suave">actual</span>{% endif %}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+</div>
+{% endblock %}

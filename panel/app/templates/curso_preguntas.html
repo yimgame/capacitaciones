@@ -4,7 +4,7 @@
 <p><a href="{{ P }}/cursos/{{ c.slug }}">← {{ c.titulo }}</a> · <a href="/{{ c.slug }}" target="_blank">Ver la página del curso ↗</a></p>
 
 <div class="tarjeta">
-  <h1>Evaluación de «{{ c.titulo }}»</h1>
+  <h1>Evaluación de «{{ c.titulo }}» <span class="suave">v{{ c.version or 1 }}</span></h1>
   {% if not c.examen %}<p class="aviso">Este curso tiene la evaluación <b>apagada</b>: las preguntas se guardan pero no se toman
     hasta que la prendas en <a href="{{ P }}/cursos/{{ c.slug }}">la configuración del curso</a>.</p>{% endif %}
   <p class="suave" id="origen"></p>
@@ -47,6 +47,8 @@
 <div id="lista"></div>
 
 <div class="tarjeta guardar-fijo">
+  <label class="switch"><input type="checkbox" id="nueva-version"> Versión nueva <b>v{{ (c.version or 1) + 1 }}</b></label>
+  <label class="switch" id="recursar-box" hidden><input type="checkbox" id="recursar-todos"> Que los {{ asignados }} asignados lo vuelvan a hacer</label>
   <button class="primario" type="button" id="b-guardar">💾 Guardar preguntas</button>
   <span id="estado" class="suave"></span>
 </div>
@@ -155,16 +157,20 @@ $("b-guardar").onclick = async () => {
   try {
     const r = await fetch(P + "/api/preguntas/" + SLUG, {
       method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ preguntas, preguntas_por_examen: $("por-examen").value, aprobacion: $("aprobacion").value }) });
+      body: JSON.stringify({ preguntas, preguntas_por_examen: $("por-examen").value, aprobacion: $("aprobacion").value,
+                             nueva_version: $("nueva-version").checked, recursar_todos: $("nueva-version").checked && $("recursar-todos").checked }) });
     const d = await r.json().catch(() => ({}));
     if (!r.ok || !d.ok) throw new Error(d.error || d.detail || "error " + r.status);
     preguntas = d.preguntas; cambios = false; dibujar();
-    $("estado").textContent = "✔ Guardado.";
+    $("estado").textContent = `✔ Guardado (v${d.version}, revisión ${d.revision})` + (d.recursados ? ` · ${d.recursados} chofer(es) lo tienen que volver a hacer` : "") + ".";
+    $("nueva-version").checked = false; $("recursar-box").hidden = true; $("recursar-todos").checked = false;
   } catch (e) {
     $("estado").textContent = "✖ " + e.message;
   }
   $("b-guardar").disabled = false;
 };
+$("nueva-version").onchange = () => ($("recursar-box").hidden = !$("nueva-version").checked);
+$("recursar-todos").onchange = () => { if ($("recursar-todos").checked && !confirm("Los {{ asignados }} chofer(es) asignados lo van a tener que volver a hacer. ¿Seguro?")) $("recursar-todos").checked = false; };
 $("por-examen").oninput = marcar; $("aprobacion").oninput = marcar;
 // --- carga masiva
 const escH = (t) => String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
