@@ -212,6 +212,11 @@ async def actualizar(req: Request):
     return {"ok": True}
 
 
+@app.get(PREFIJO + "/ayuda", response_class=HTMLResponse)
+def ayuda(req: Request):
+    return plantillas.TemplateResponse(req, "ayuda.html", {"u": _requiere(req)})
+
+
 # ------------------------------------------------------------------ cuenta y usuarios
 @app.get(PREFIJO + "/cuenta", response_class=HTMLResponse)
 def cuenta(req: Request):

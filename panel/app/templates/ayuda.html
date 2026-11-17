@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+{% block titulo %}Ayuda · Panel de capacitación{% endblock %}
+{% block contenido %}
+{% set cursos_ok = 'cursos' in u.puede %}
+{% set gestion = 'gestion' in u.puede %}
+{% set carga = 'choferes' in u.puede %}
+{% set coord = u.rol == 'coordinador' %}
+<div class="tarjeta">
+  <h1>❓ Ayuda</h1>
+  <p class="suave">Cómo hacer cada cosa en el panel. Tu usuario es <b>{{ u.rol_nombre }}</b>{% if coord %} (ves y cargás solo los choferes de tu transporte){% endif %}:
+    acá aparece lo que podés hacer con ese rol.</p>
+  <input id="buscar-ayuda" type="search" placeholder="Buscar… (ej. vencimiento, importar, recursar, PDF)" style="width:100%">
+  <nav class="indice" id="indice"></nav>
+</div>
+
+<div id="ayuda">
+
+<section class="tarjeta" id="s-inicio">
+  <h2>🧭 Cómo funciona en 1 minuto</h2>
+  <ol>
+    {% if cursos_ok %}<li><b>Armá el curso</b> (Cursos): material, videos, PDF, links y las preguntas de la evaluación.</li>{% endif %}
+    <li><b>Cargá los choferes</b> (Choferes): de a uno, con una lista de Excel{% if gestion %} o importando desde los sistemas (maestro, JDE, GCG){% endif %}.</li>
+    {% if gestion %}<li><b>Asigná el curso</b> (Cumplimiento): a choferes marcados o a todo un transporte, con fecha límite si querés.</li>{% endif %}
+    <li><b>El chofer entra</b> a la página de capacitación con su <b>DNI y fecha de nacimiento</b>, ve sus cursos y los hace.</li>
+    <li><b>Seguí quién falta</b> (Cumplimiento): semáforo por transporte, recordatorio por WhatsApp, Excel. Los resultados y gráficos, en <b>Panel</b>.</li>
+  </ol>
+</section>
+
+{% if cursos_ok %}
+<section class="tarjeta" id="s-cursos">
+  <h2>📚 Cursos</h2>
+  <details><summary>Crear un curso nuevo</summary>
+    <p><b>Cursos → Nuevo curso</b>: poné el título y la <b>dirección</b> (lo que va después de la barra en la página, ej. <code>manejonocturno</code>:
+      solo minúsculas, números y guiones). Podés <b>copiar el contenido</b> de otro curso para no empezar de cero.
+      Se crea <b>deshabilitado</b>: armalo tranquilo y habilitalo cuando esté listo.</p></details>
+  <details><summary>Editar título, descripción y material de estudio</summary>
+    <p><b>Cursos → ✏️ Editar</b>. En <b>Material de estudio</b> cada línea que empieza con <code>#</code> es un título y cada línea de abajo es un punto:</p>
+    <pre># Antes de salir
+Revisá luces y frenos.
+Llevá la licencia y el seguro.
+# Normativa
+Ver [Ley de Tránsito 24.449](https://www.argentina.gob.ar/normativa/nacional/norma-818)</pre>
+    <p>Los links (<code>https://…</code>) quedan clickeables; con <code>[texto](link)</code> se muestra el texto en vez del link. Al terminar, <b>💾 Guardar cambios</b>.</p></details>
+  <details><summary>Agregar videos, PDF, imágenes o links</summary>
+    <ul>
+      <li><b>Subir video o archivo</b>: mp4/webm (lo más compatible: <b>mp4 H.264</b>), PDF, jpg/png. Hasta 4 GB; se sube por partes y si se corta, sigue desde donde quedó.</li>
+      <li><b>PDF</b>: en la computadora el chofer lo ve dentro del curso; en el celular le aparece un botón para abrirlo.</li>
+      <li><b>Agregar un link</b>: una página o un PDF de internet; se abre en otra pestaña. (Páginas como argentina.gob.ar no se pueden mostrar adentro: si querés la ley dentro del curso, bajá el PDF y subilo.)</li>
+      <li><b>YouTube</b>: pegá el link del video.</li>
+      <li>En la tabla <b>Videos y archivos</b> cambiás el título que ve el chofer y el <b>orden</b> (número); <b>🗑 Quitar</b> lo saca del curso.</li>
+    </ul></details>
+  <details><summary>Quién lo puede hacer: abierto o solo asignados</summary>
+    <ul><li><b>Abierto</b>: aparece en la portada para cualquiera; el que no está en el padrón completa sus datos al empezar.</li>
+      <li><b>Solo choferes asignados</b>: solo lo ven y lo pueden hacer los que lo tienen asignado (entran con DNI y fecha de nacimiento).</li></ul></details>
+  <details><summary>Vigencia: cuándo hay que repetirlo (vencimientos)</summary>
+    <ul>
+      <li><b>No vence</b>: una vez aprobado queda vigente siempre (salvo que lo hagas recursar).</li>
+      <li><b>Cada 6 meses / Anual / Cada 2 o 3 años</b>, y elegís desde cuándo se cuenta:
+        <ul><li><b>Que aprueba cada chofer</b>: cada uno vence a los N meses de haber aprobado.</li>
+            <li><b>La fecha de la versión del curso</b>: la misma fecha para todos (fecha de la versión + N meses); el editor te muestra la fecha calculada.</li></ul></li>
+      <li><b>Hasta una fecha específica</b>: elegís el día; lo aprobado antes de esa fecha vence ese día.</li>
+    </ul>
+    <p>30 días antes de vencer figura <b>🟡 Por vencer</b> (en Cumplimiento y en la portada del chofer); después, <b>🔴 Vencido</b> y lo tiene que volver a hacer.</p></details>
+  <details><summary>Control de atención con la cámara</summary>
+    <p>En <b>Control de atención</b>: el chofer elige con o sin cámara, solo con cámara o solo sin cámara. Con <b>Mostrar al chofer la cámara</b> destildado
+      no ve la imagen ni el indicador, pero se mide igual. Todo se procesa en el celular: no se graba nada, solo llegan números
+      (% de atención, distracciones, salidas de la página). Ojo: abrir un link o PDF en otra pestaña cuenta como salida.</p>
+    <p><b>Tiempo mínimo de estudio</b>: segundos que tiene que estar en el material antes de poder pasar a la evaluación.</p></details>
+  <details><summary>Versiones, historial y volver atrás</summary>
+    <ul>
+      <li>Arriba del editor ves la <b>versión</b> (v1, v2…), cuándo se guardó por última vez y quién.</li>
+      <li><b>Cada guardado</b> queda en <b>🕘 Historial y versiones</b> con fecha, hora, quién y qué cambió. <b>↩ Restaurar</b> vuelve el curso a como estaba (no cambia la versión ni si está habilitado).</li>
+      <li>La <b>versión sube</b> solo si al guardar tildás <b>Guardar como versión nueva</b> (para cambios de contenido; una corrección chica no hace falta).
+        Podés tildar además <b>que los asignados lo vuelvan a hacer</b>.</li>
+      <li>Cada resultado guarda la versión que rindió el chofer.</li>
+    </ul></details>
+  <details><summary>Habilitar o deshabilitar un curso</summary>
+    <p>En <b>Cursos</b> con el botón <b>Habilitar / Deshabilitar</b>, o con el tilde <b>Curso habilitado</b> en el editor. Deshabilitado no lo ve ningún chofer.</p></details>
+</section>
+
+<section class="tarjeta" id="s-preguntas">
+  <h2>📝 Preguntas y evaluación</h2>
+  <details><summary>Editar preguntas una por una</summary>
+    <p><b>Editar curso → 📝 Editar preguntas y respuestas</b>. <b>➕ Agregar pregunta</b>, escribí el texto, la <b>✔ Correcta</b> (verde) y las <b>✘ Incorrectas</b>
+      (hasta 5; <b>➕ Opción incorrecta</b> para sumar). <b>↑</b> la sube de lugar, <b>🗑 Borrar</b> la saca. Al final <b>💾 Guardar preguntas</b>
+      (si te vas sin guardar, te avisa).</p></details>
+  <details><summary>Cambiar cuál es la respuesta correcta</summary>
+    <p>En la opción que es la buena tocá <b>✔ Correcta</b>: pasa a ser la correcta y la anterior queda como incorrecta. Para corregir solo el texto, editalo en el campo verde.</p></details>
+  <details><summary>Carga masiva desde Excel o texto</summary>
+    <p>En <b>📤 Carga masiva de preguntas</b>: elegí la planilla o pegá el texto y <b>pasan solas al editor</b>. Elegí antes si <b>agregar</b> (saltea repetidas) o <b>reemplazar</b> todas. Después <b>💾 Guardar preguntas</b>.</p>
+    <p>Formatos:</p>
+    <ul>
+      <li><b>Texto numerado</b> con la clave en otra hoja: <code>1. ¿Pregunta? a) … b) … c) …</code> y una hoja <i>Preg. | Resp.</i> (1 | b, 2 | a…). Subí el Excel <b>entero</b> para que lea las dos hojas.</li>
+      <li>Si pegás texto, pegá también la tabla de respuestas debajo, o terminá con <code>Clave:</code> y <code>1 a, 2 b, 3 c</code>.</li>
+      <li>También sirve marcar la correcta con <code>*</code> (<code>*b) 80 km/h</code>) o escribir <code>Respuesta: b</code>.</li>
+      <li><b>Planilla en columnas</b>: <i>Pregunta | Correcta | Incorrecta 1 | Incorrecta 2…</i> o <i>Pregunta | A | B | C | D | Respuesta</i>.</li>
+    </ul></details>
+  <details><summary>Cuántas preguntas toma y con cuánto se aprueba</summary>
+    <p>Arriba del editor de preguntas: <b>Preguntas por examen</b> (se eligen al azar de las del curso, y las opciones salen mezcladas) y <b>Porcentaje para aprobar</b>.
+      Si el curso no tiene preguntas propias usa el banco de la Ley 24.449. Para no tomar examen, destildá <b>Evaluación al final</b> en el editor del curso.</p></details>
+</section>
+{% endif %}
+
+<section class="tarjeta" id="s-choferes">
+  <h2>🚚 Choferes y transportes</h2>
+  {% if carga %}
+  <details><summary>Agregar o editar un chofer</summary>
+    <p><b>Choferes → Agregar chofer</b>: DNI (o documento extranjero), apellido y nombre, celular, fecha de nacimiento{% if not coord %} y transporte{% endif %}. Con <b>✏️</b> lo editás.
+      Si no tenés la fecha de nacimiento o el celular, dejalos vacíos: el chofer los completa la primera vez que entra.</p></details>
+  <details><summary>Importar una lista (Excel, CSV o pegado)</summary>
+    <p>En <b>Importar una lista</b> subí el archivo o pegá las filas <b>con la fila de títulos</b>. Reconoce columnas como DNI/Documento/CUIL, Apellido y nombre
+      (o Apellido + Nombre), Celular/Teléfono, Fecha de nacimiento{% if not coord %} y Transporte/Empresa{% endif %}. Tocá <b>🔍 Revisar</b> (no guarda nada) y después <b>⬆ Importar</b>.
+      Los que ya existen se actualizan, no se duplican.</p></details>
+  {% endif %}
+  {% if gestion %}
+  <details><summary>Importar desde los sistemas (Maestro de proveedores, JDE, GCG)</summary>
+    <p>En <b>Importar desde los sistemas</b> subí los exportes tal como salen (uno, dos o los tres):</p>
+    <ul><li><b>Maestro de proveedores</b> → transportes (nº de proveedor, razón social, JRT, CUIT, contacto). Los que están de baja quedan inactivos.</li>
+      <li><b>JDE (DNI actualizados)</b> → a qué proveedor pertenece cada chofer.</li>
+      <li><b>GCG (ExportaciónExcel)</b> → los choferes (DNI, CUIL, nombre, estado, contratista).</li></ul>
+    <p>Elegí qué estados de GCG entran (de entrada habilitados y parcialmente habilitados), <b>🔍 Revisar</b> y <b>⬆ Importar</b>.
+      El transporte de cada chofer sale de JDE → maestro; si no, del contratista de GCG. Nunca pisa la fecha de nacimiento ni el celular.</p></details>
+  <details><summary>Transportes</summary>
+    <p>Al final de <b>Choferes</b>: agregar un transporte, cambiarle el nombre o marcarlo inactivo. Para un <b>coordinador</b>, primero cargá su transporte.</p></details>
+  {% endif %}
+  {% if carga %}
+  <details><summary>Dar de baja a un chofer</summary>
+    <p><b>Baja</b> en su fila: deja de figurar en Cumplimiento; su historial queda. Con <b>Ver dados de baja</b> lo encontrás y lo <b>Reactivás</b>.</p></details>
+  {% else %}
+  <p class="suave">Con tu usuario podés ver los choferes; cargarlos o editarlos lo hace un capacitador o el coordinador del transporte.</p>
+  {% endif %}
+</section>
+
+{% if gestion %}
+<section class="tarjeta" id="s-asignar">
+  <h2>📌 Asignar cursos y recursar</h2>
+  <details><summary>Asignar un curso a algunos choferes</summary>
+    <p>En <b>Choferes</b>, marcá los choferes (☑) y en <b>Asignar un curso a los choferes marcados</b> elegí el curso y, si querés, una <b>fecha límite</b>.
+      También desde <b>Cumplimiento → Asignar o recursar</b> con <i>Los choferes marcados en la lista</i>.</p></details>
+  <details><summary>Asignar un curso a todo un transporte (y a los que entren después)</summary>
+    <p><b>Cumplimiento → Asignar o recursar</b>: elegí el curso, en <b>A quiénes</b> «Todo el transporte …» y <b>➕ Asignar</b>.
+      Dejá tildado <b>Los choferes que se carguen después también lo reciben</b> (con un <b>plazo en días</b> para los nuevos) y los que se den de alta o se importen
+      más adelante lo reciben solos. Esas reglas aparecen abajo y se pueden quitar.</p></details>
+  <details><summary>Hacer que vuelvan a hacer un curso (recursar)</summary>
+    <p><b>Cumplimiento</b>: elegí el curso y a quiénes (marcados o todo un transporte) y <b>🔁 Que lo vuelvan a hacer</b>. Queda <b>pendiente</b> de nuevo; lo aprobado antes no cuenta
+      pero queda en el historial. Para que lo vuelvan a hacer <b>todos</b> los asignados por una versión nueva del curso, usá el tilde al guardar la versión nueva.</p></details>
+  <details><summary>Cambiar la fecha límite o quitar una asignación</summary>
+    <p>Mismo lugar: <b>📅 Cambiar fecha límite</b> o <b>✖ Quitar asignación</b>. Pasada la fecha límite sin aprobar figura <b>🔴 Fuera de término</b>.</p></details>
+</section>
+{% endif %}
+
+<section class="tarjeta" id="s-cumplimiento">
+  <h2>🚦 Cumplimiento: quién está al día y quién falta</h2>
+  <details><summary>Leer el semáforo y los estados</summary>
+    <p>El <b>semáforo</b> muestra por transporte el % de cursos asignados al día (verde ≥ 85%, amarillo ≥ 60%, rojo menos). Estados de cada chofer:</p>
+    <ul><li>✅ <b>Aprobado</b> · 🟡 <b>Por vencer</b> (vence en 30 días) · 🔴 <b>Vencido</b> · 🔴 <b>Fuera de término</b> (pasó la fecha límite) · ⚪ <b>Pendiente</b> (puede tener intentos desaprobados).</li></ul></details>
+  <details><summary>Filtrar, buscar y exportar a Excel</summary>
+    <p>Filtrá por {% if not coord %}transporte, JRT, {% endif %}curso y estado (<i>Les falta</i> junta pendientes, fuera de término y vencidos); buscá por nombre o DNI.
+      <b>⬇ Excel (CSV)</b> descarga lo que estás viendo.</p></details>
+  <details><summary>Mandar un recordatorio por WhatsApp</summary>
+    <p>En los que tienen algo pendiente aparece <b>💬</b>: abre WhatsApp con el mensaje listo (nombre, curso, fecha límite y cómo entrar). Solo hay que tocar enviar.
+      Si no aparece, el chofer no tiene celular cargado (o no es válido).</p></details>
+</section>
+
+<section class="tarjeta" id="s-panel">
+  <h2>📊 Panel de resultados</h2>
+  <details><summary>Qué muestra y cómo filtrarlo</summary>
+    <p><b>Panel</b>: evaluaciones en el tiempo, aprobación por transporte y edad, notas, atención vs. nota, cuándo rinden, <b>preguntas que más fallan</b>
+      (para reforzar en el material) y <b>alertas</b> (ej. aprobó con muy poca atención o estudiando pocos segundos). Filtrá por fechas, transporte, edad, curso y versión con o sin cámara.
+      Tocá un chofer para ver todas sus evaluaciones (con la versión del curso que rindió). <b>Datos demo</b> muestra datos ficticios para probar.</p></details>
+</section>
+
+<section class="tarjeta" id="s-chofer">
+  <h2>📱 Qué ve el chofer</h2>
+  <details><summary>Cómo entra y hace un curso</summary>
+    <ol><li>Entra a la página de capacitación y pone su <b>DNI y fecha de nacimiento</b> (si el padrón no tenía la fecha, queda la que pone la primera vez).</li>
+      <li>Si no tenemos su celular, se lo pide.</li>
+      <li>Ve <b>Tus capacitaciones</b> con su estado y fechas, y las abiertas.</li>
+      <li>En el curso: elige con o sin cámara (si el curso lo permite), estudia el material, y al cumplir el tiempo mínimo pasa a la evaluación.</li>
+      <li>Ve su resultado y qué respuestas tiene que repasar.</li></ol>
+    <p>Los cursos <b>abiertos</b> también se pueden hacer sin ingresar, completando nombre, DNI, celular y fecha de nacimiento.</p></details>
+  <details><summary>“No encontramos ese DNI con esa fecha de nacimiento”</summary>
+    <p>El chofer no está cargado, está dado de baja, o la fecha no coincide con la del padrón. Revisalo en <b>Choferes</b> (buscalo por DNI); si la fecha está mal, corregila con ✏️.</p></details>
+</section>
+
+{% if 'usuarios' in u.puede %}
+<section class="tarjeta" id="s-usuarios">
+  <h2>👥 Usuarios y roles</h2>
+  <details><summary>Qué puede hacer cada rol</summary>
+    <ul><li><b>Administrador</b>: todo, incluidos los usuarios.</li>
+      <li><b>Capacitador</b>: cursos, preguntas, choferes, importaciones, asignar y recursar.</li>
+      <li><b>Evaluador</b>: solo mira el panel y el cumplimiento.</li>
+      <li><b>Coordinador de transporte</b>: ve y carga solo los choferes de su transporte y cómo vienen con los cursos.</li></ul></details>
+  <details><summary>Crear un usuario o cambiarle el rol</summary>
+    <p><b>Usuarios → Agregar usuario</b>: usuario, nombre y rol (para un coordinador, elegí su transporte). Se muestra una <b>contraseña temporal una sola vez</b>:
+      pasásela por un medio seguro; al entrar la tiene que cambiar. En la lista podés cambiar el rol, generar una <b>Nueva contraseña</b> o <b>Desactivar</b>.</p></details>
+</section>
+{% endif %}
+
+<section class="tarjeta" id="s-cuenta">
+  <h2>🔑 Tu cuenta</h2>
+  <details><summary>Cambiar mi contraseña</summary>
+    <p>Tocá tu nombre arriba a la derecha (<b>{{ u.nombre or u.usuario }}</b>) → poné la actual y la nueva (mínimo 10 caracteres).
+      Si te la olvidaste, pedile a un administrador una contraseña nueva.</p></details>
+</section>
+
+</div>
+<p class="suave" id="sin-resultados" hidden>No encontré nada con esa búsqueda.</p>
+
+<style>
+.indice { display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:12px; font-size:14px; }
+#ayuda details { border-top:1px solid var(--borde); padding:8px 0; }
+#ayuda details:first-of-type { border-top:0; }
+#ayuda summary { font-size:15px; color:var(--txt); font-weight:600; }
+#ayuda details[open] summary { color:var(--acento); }
+#ayuda pre { background:var(--bg); border:1px solid var(--borde); border-radius:8px; padding:10px; overflow-x:auto; font-size:13px; }
+#ayuda li { margin:4px 0; }
+mark { background:var(--aviso-bg); color:inherit; }
+</style>
+<script>
+const secciones = [...document.querySelectorAll("#ayuda > section")];
+document.getElementById("indice").innerHTML = secciones.map((s) => `<a href="#${s.id}">${s.querySelector("h2").textContent}</a>`).join("");
+const normar = (t) => t.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase();
+document.getElementById("buscar-ayuda").oninput = (e) => {
+  const q = normar(e.target.value.trim());
+  let alguno = false;
+  for (const s of secciones) {
+    let enSeccion = false;
+    for (const d of s.querySelectorAll("details")) {
+      const ok = !q || normar(d.textContent).includes(q);
+      d.hidden = !ok; d.open = !!q && ok; enSeccion = enSeccion || ok;
+    }
+    const sinDetalles = !s.querySelector("details");
+    const okS = sinDetalles ? (!q || normar(s.textContent).includes(q)) : enSeccion;
+    s.hidden = !okS; alguno = alguno || okS;
+  }
+  document.getElementById("sin-resultados").hidden = alguno;
+};
+if (location.hash) { const d = document.querySelector(location.hash + " details"); if (d) d.open = true; }
+</script>
+{% endblock %}

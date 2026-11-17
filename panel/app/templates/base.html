@@ -17,6 +17,7 @@
     <a href="{{ P }}/choferes">Choferes</a>
     {% if 'cursos' in u.puede %}<a href="{{ P }}/cursos">Cursos</a>{% endif %}
     {% if 'usuarios' in u.puede %}<a href="{{ P }}/usuarios">Usuarios</a>{% endif %}
+    <a href="{{ P }}/ayuda" title="Cómo hacer cada cosa">❓ Ayuda</a>
     <a href="{{ P }}/cuenta">{{ u.nombre or u.usuario }}</a>
     <form method="post" action="{{ P }}/salir"><button class="link">Salir</button></form>
   </nav>
