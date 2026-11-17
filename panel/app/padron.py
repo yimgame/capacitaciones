@@ -52,6 +52,16 @@ def iniciar():
             PRIMARY KEY (curso, transporte_id));
         CREATE TABLE IF NOT EXISTS chofer_sesiones (token TEXT PRIMARY KEY, dni TEXT NOT NULL, vence REAL NOT NULL);
         """)
+        # 2026-11-17: datos que vienen de los sistemas (maestro de proveedores, JDE, GCG)
+        for tabla, cols in (("transportes", ("nro_proveedor TEXT", "cuit TEXT", "jrt TEXT", "estado_sistema TEXT",
+                                             "tipo_servicio TEXT", "mail TEXT", "telefono TEXT", "provincia TEXT")),
+                            ("choferes", ("cuil TEXT", "nro_proveedor TEXT", "gcg_id TEXT", "gcg_estado TEXT",
+                                          "contratista TEXT", "subcontratista TEXT", "origen TEXT"))):
+            existentes = {r["name"] for r in c.execute(f"PRAGMA table_info({tabla})")}
+            for col in cols:
+                if col.split()[0] not in existentes:
+                    c.execute(f"ALTER TABLE {tabla} ADD COLUMN {col}")
+        c.execute("CREATE INDEX IF NOT EXISTS transportes_proveedor ON transportes(nro_proveedor)")
 
 
 def ahora_iso():
@@ -105,8 +115,9 @@ def renombrar_transporte(tid, nombre, activo):
 
 # ------------------------------------------------------------------ choferes
 def normalizar_dni(dni):
-    dni = re.sub(r"\D", "", str(dni or ""))
-    return dni if re.fullmatch(r"\d{7,8}", dni) else ""
+    """Documento: 6 a 12 dígitos (DNI argentino 7-8; los extranjeros —Paraguay, Brasil, Chile...— pueden ser más)."""
+    dni = re.sub(r"\D", "", str(dni or "").split(".")[0]).lstrip("0")
+    return dni if re.fullmatch(r"\d{6,12}", dni) else ""
 
 
 def normalizar_fecha(s):
@@ -177,7 +188,7 @@ def guardar_chofer(datos, por, solo_transporte=None):
     Devuelve 'nuevo' o 'actualizado'."""
     dni = normalizar_dni(datos.get("dni"))
     if not dni:
-        raise ValueError("DNI inválido (7 u 8 números).")
+        raise ValueError("Documento inválido (de 6 a 12 números).")
     nombre = " ".join(str(datos.get("nombre") or "").split())[:80]
     if len(nombre) < 3:
         raise ValueError(f"DNI {dni}: falta el nombre.")
@@ -410,12 +421,15 @@ def estado(asig, resultados, curso, hoy=None):
     return out
 
 
-def cumplimiento(resultados, transporte_id=None, curso=None, dni=None):
+def cumplimiento(resultados, transporte_id=None, curso=None, dni=None, jrt=None):
     """Una fila por (chofer activo, curso asignado) con su estado."""
-    sql = """SELECT a.*, ch.nombre, ch.celular, ch.transporte_id, t.nombre AS transporte
+    sql = """SELECT a.*, ch.nombre, ch.celular, ch.transporte_id, t.nombre AS transporte, t.jrt
              FROM asignaciones a JOIN choferes ch ON ch.dni = a.dni LEFT JOIN transportes t ON t.id = ch.transporte_id
              WHERE ch.activo = 1"""
     args = []
+    if jrt:
+        sql += " AND t.jrt=?"
+        args.append(jrt)
     if transporte_id:
         sql += " AND ch.transporte_id=?"
         args.append(transporte_id)
@@ -446,7 +460,8 @@ def resumen_cumplimiento(filas):
     grupos = {}
     for f in filas:
         g = grupos.setdefault(f["transporte"] or "Sin transporte", {"transporte": f["transporte"] or "Sin transporte",
-                                                                     "transporte_id": f["transporte_id"], "total": 0,
+                                                                     "transporte_id": f["transporte_id"], "jrt": f.get("jrt"),
+                                                                     "total": 0,
                                                                      **{k: 0 for k in ESTADOS}})
         g["total"] += 1
         g[f["estado"]] += 1
@@ -498,3 +513,191 @@ def mis_cursos(ch, resultados):
     abiertos = [{"slug": c["slug"], "titulo": c["titulo"], "descripcion": c.get("descripcion", "")}
                 for c in habilitados.values() if c.get("acceso", "abierto") == "abierto" and c["slug"] not in ya]
     return {"asignados": asignados, "abiertos": abiertos}
+
+
+def jrts():
+    with closing(con()) as c:
+        return [r[0] for r in c.execute("SELECT DISTINCT jrt FROM transportes WHERE jrt IS NOT NULL AND jrt<>'' ORDER BY jrt")]
+
+
+def guardar_celular(dni, celular):
+    """El chofer deja su celular (al ingresar o al anotarse en un curso) si el padrón no lo tenía."""
+    cel = re.sub(r"[^\d+]", "", str(celular or ""))[:20]
+    if len(re.sub(r"\D", "", cel)) < 8:
+        return False
+    with closing(con()) as c, c:
+        return c.execute("UPDATE choferes SET celular=?, actualizado=? WHERE dni=? AND (celular IS NULL OR celular='')",
+                         (cel, ahora_iso(), dni)).rowcount > 0
+
+
+# ------------------------------------------------------------------ importar desde los sistemas (maestro, JDE, GCG)
+# El navegador lee los .xlsx y manda solo las columnas que sirven (ver choferes.html → SISTEMAS). Cruce:
+#   transporte de cada chofer = proveedor de JDE (DNI → "Nº de prop") → maestro de proveedores;
+#   si no está en JDE o el proveedor no está en el maestro → el "Contratista" de GCG por nombre.
+_SUFIJOS = re.compile(r"(sociedadanonima|sociedaddehecho|sacifia|sacifi|sacif|saic|sas|srl|ltda|sa|sh)$")
+
+
+def _clave_empresa(s):
+    return _SUFIJOS.sub("", re.sub(r"[^a-z0-9]", "", _clave(s).replace(" ", "")))
+
+
+def _nombre_gcg(s):
+    """'PEREZ, JUAN CARLOS' -> 'Perez Juan Carlos'."""
+    s = " ".join(str(s or "").replace(",", " ").split())
+    return s.title() if s.isupper() or s.islower() else s
+
+
+def _txt(v, n=120):
+    return " ".join(str(v or "").split())[:n]
+
+
+def importar_sistemas(maestro, jde, gcg, op, por, simular=True):
+    """maestro: [{prov, razon, jrt, estado, servicio, mail, tel, provincia, cuit}]
+    jde: [{dni, nombre, prov, serie, fecha}]   gcg: [{id, nombre, cuil, dni, estado, contratista, subcontratista}]
+    op: {gcg_estados: [...] (vacío = todos), incluir_solo_jde: bool, crear_transportes: bool}"""
+    r = {"transportes_nuevos": 0, "transportes_actualizados": 0, "choferes_nuevos": 0, "choferes_actualizados": 0,
+         "por_jde": 0, "por_contratista": 0, "sin_transporte": 0, "descartados_estado": 0, "documentos_invalidos": 0,
+         "contratistas_sin_match": {}, "por_jrt": {}, "transportes_creados_por_nombre": set()}
+    with closing(con()) as c, c:
+        # --- transportes existentes
+        trans = {t["id"]: dict(t) for t in c.execute("SELECT * FROM transportes")}
+        por_prov = {t["nro_proveedor"]: t["id"] for t in trans.values() if t["nro_proveedor"]}
+        por_nombre = {}
+        for t in trans.values():
+            por_nombre.setdefault(_clave_empresa(t["nombre"]), t["id"])
+        nuevo_id = [-1]
+
+        def alta_transporte(campos):
+            if simular:
+                nuevo_id[0] -= 1
+                return nuevo_id[0]
+            cols = ", ".join(campos)
+            return c.execute(f"INSERT INTO transportes ({cols}) VALUES ({', '.join('?' * len(campos))})",
+                             list(campos.values())).lastrowid
+
+        # --- 1. maestro de proveedores -> transportes
+        for m in maestro or []:
+            prov = normalizar_dni(m.get("prov")) or re.sub(r"\D", "", str(m.get("prov") or "").split(".")[0])
+            razon = _txt(m.get("razon"), 80)
+            if not prov or not razon:
+                continue
+            campos = {"nombre": razon, "nro_proveedor": prov, "cuit": re.sub(r"\D", "", str(m.get("cuit") or ""))[:11],
+                      "jrt": _txt(m.get("jrt"), 60), "estado_sistema": _txt(m.get("estado"), 40),
+                      "tipo_servicio": _txt(m.get("servicio"), 60), "mail": _txt(m.get("mail"), 300),
+                      "telefono": _txt(m.get("tel"), 120), "provincia": _txt(m.get("provincia"), 60),
+                      "activo": 0 if _clave(m.get("estado")) == "baja" else 1}
+            tid = por_prov.get(prov)
+            cand = por_nombre.get(_clave_empresa(razon))
+            if not tid and cand and not (trans.get(cand) or {}).get("nro_proveedor"):
+                tid = cand                            # cargado a mano con ese nombre: le asigno el proveedor
+            if tid:
+                if tid < 0:                           # repetido dentro del mismo maestro (en la revisión)
+                    continue
+                r["transportes_actualizados"] += 1
+                if not simular:
+                    otro = c.execute("SELECT id FROM transportes WHERE nombre=? COLLATE NOCASE AND id<>?", (razon, tid)).fetchone()
+                    if otro:
+                        campos.pop("nombre")          # no pisar con un nombre que ya usa otro transporte
+                    c.execute(f"UPDATE transportes SET {', '.join(k + '=?' for k in campos)} WHERE id=?",
+                              [*campos.values(), tid])
+            else:
+                if _clave_empresa(razon) in por_nombre:   # mismo nombre que otro proveedor del maestro: lo distingo
+                    campos["nombre"] = f"{razon} ({prov})"
+                tid = alta_transporte(campos)
+                r["transportes_nuevos"] += 1
+            por_prov[prov] = tid
+            por_nombre.setdefault(_clave_empresa(razon), tid)
+            trans[tid] = {**trans.get(tid, {}), **campos, "id": tid}
+
+        # --- 2. JDE: DNI -> proveedor (y CUIL si "Nº serie veh" tiene 11 dígitos); el más reciente gana
+        jde_por_dni = {}
+        for j in sorted(jde or [], key=lambda x: str(x.get("fecha") or "")):
+            dni = normalizar_dni(j.get("dni"))
+            if dni:
+                serie = re.sub(r"\D", "", str(j.get("serie") or "").split(".")[0])
+                jde_por_dni[dni] = {"nombre": _nombre_gcg(j.get("nombre")),
+                                    "prov": re.sub(r"\D", "", str(j.get("prov") or "").split(".")[0]),
+                                    "cuil": serie if len(serie) == 11 else ""}
+
+        # --- 3. choferes: GCG (+ JDE solo si se pide)
+        estados = {e.upper() for e in (op.get("gcg_estados") or [])}
+        filas = []
+        vistos = set()
+        for g in gcg or []:
+            dni = normalizar_dni(g.get("dni"))
+            if not dni:
+                r["documentos_invalidos"] += 1
+                continue
+            if dni in vistos:
+                continue
+            vistos.add(dni)
+            est = _txt(g.get("estado"), 40).upper()
+            if estados and est not in estados:
+                r["descartados_estado"] += 1
+                continue
+            filas.append({"dni": dni, "nombre": _nombre_gcg(g.get("nombre")), "gcg_id": _txt(g.get("id"), 20),
+                          "gcg_estado": est, "cuil": re.sub(r"\D", "", str(g.get("cuil") or ""))[:11],
+                          "contratista": _txt(g.get("contratista"), 120),
+                          "subcontratista": _txt(g.get("subcontratista"), 120), "origen": "gcg"})
+        if op.get("incluir_solo_jde"):
+            for dni, j in jde_por_dni.items():
+                if dni not in vistos and j["prov"] in por_prov:
+                    filas.append({"dni": dni, "nombre": j["nombre"], "origen": "jde"})
+                    vistos.add(dni)
+
+        existentes = {x["dni"]: dict(x) for x in c.execute("SELECT dni, transporte_id FROM choferes")}
+        for f in filas:
+            j = jde_por_dni.get(f["dni"])
+            if j:
+                f["cuil"] = f.get("cuil") or j["cuil"]
+                f["nro_proveedor"] = j["prov"]
+                if len(f["nombre"]) < 3:
+                    f["nombre"] = j["nombre"]
+            tid = None
+            if j and j["prov"] in por_prov:
+                tid = por_prov[j["prov"]]
+                r["por_jde"] += 1
+            elif f.get("contratista"):
+                k = _clave_empresa(f["contratista"])
+                tid = por_nombre.get(k)
+                if not tid and op.get("crear_transportes"):
+                    tid = alta_transporte({"nombre": f["contratista"][:80]})
+                    por_nombre[k] = tid
+                    r["transportes_creados_por_nombre"].add(f["contratista"][:80])
+                    r["transportes_nuevos"] += 1
+                if tid:
+                    r["por_contratista"] += 1
+                else:
+                    r["contratistas_sin_match"][f["contratista"]] = r["contratistas_sin_match"].get(f["contratista"], 0) + 1
+            if not tid:
+                r["sin_transporte"] += 1
+            jrt = (trans.get(tid) or {}).get("jrt") or "Sin JRT"
+            r["por_jrt"][jrt] = r["por_jrt"].get(jrt, 0) + 1
+            if len(f["nombre"]) < 3:
+                f["nombre"] = f"Documento {f['dni']}"
+            ex = existentes.get(f["dni"])
+            r["choferes_actualizados" if ex else "choferes_nuevos"] += 1
+            if simular:
+                continue
+            datos = {k: f.get(k) or None for k in ("cuil", "nro_proveedor", "gcg_id", "gcg_estado", "contratista",
+                                                     "subcontratista", "origen")}
+            if ex:
+                # nunca se pisan nacimiento ni celular (los da el chofer); el transporte solo si se pudo determinar
+                c.execute(f"""UPDATE choferes SET nombre=?, transporte_id=COALESCE(?, transporte_id), actualizado=?,
+                              {', '.join(f'{k}=COALESCE(?, {k})' for k in datos)} WHERE dni=?""",
+                          [f["nombre"], tid, ahora_iso(), *datos.values(), f["dni"]])
+            else:
+                c.execute(f"""INSERT INTO choferes (dni, nombre, transporte_id, cargado_por, actualizado, {', '.join(datos)})
+                              VALUES (?,?,?,?,?{', ?' * len(datos)})""",
+                          [f["dni"], f["nombre"], tid, por, ahora_iso(), *datos.values()])
+            if tid and (not ex or ex["transporte_id"] != tid):
+                f["_tid"] = tid
+    if not simular:
+        for f in filas:                       # cursos que el transporte asigna solos a los nuevos
+            if f.get("_tid"):
+                aplicar_reglas(f["dni"], f["_tid"], por)
+    r["contratistas_sin_match"] = sorted(r["contratistas_sin_match"].items(), key=lambda x: -x[1])[:40]
+    r["transportes_creados_por_nombre"] = sorted(r["transportes_creados_por_nombre"])[:40]
+    r["por_jrt"] = sorted(r["por_jrt"].items(), key=lambda x: -x[1])
+    r["total_choferes"] = len(filas)
+    return r

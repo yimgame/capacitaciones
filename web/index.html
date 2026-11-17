@@ -33,7 +33,7 @@ a.curso:hover { border-color:var(--acento); transform:translateY(-1px); }
 
   <section id="ingreso" class="panel">
     <b>Ingresá para ver tus capacitaciones</b>
-    <label for="dni">DNI</label><input id="dni" type="tel" inputmode="numeric" placeholder="Sin puntos, ej. 30123456" autocomplete="off">
+    <label for="dni">DNI o documento</label><input id="dni" type="tel" inputmode="numeric" placeholder="Sin puntos, ej. 30123456" autocomplete="off">
     <label for="nac">Fecha de nacimiento</label><input id="nac" type="date" min="1930-01-01" max="2012-12-31">
     <div class="error" id="err"></div>
     <button id="b-ingresar">Ingresar</button>
@@ -41,6 +41,12 @@ a.curso:hover { border-color:var(--acento); transform:translateY(-1px); }
 
   <section id="mios" class="oculto">
     <p>Hola <b id="nombre"></b> <span class="suave" id="transporte"></span> · <button class="link" id="b-salir">Salir</button></p>
+    <div id="pedir-cel" class="panel oculto">
+      <b>Dejanos tu celular</b> <span class="suave">para avisarte cuando tengas una capacitación pendiente.</span>
+      <input id="cel" type="tel" inputmode="tel" autocomplete="tel" placeholder="Ej. 11 2345 6789">
+      <div class="error" id="err-cel"></div>
+      <button id="b-cel">Guardar</button>
+    </div>
     <div id="asignados"></div>
   </section>
 
@@ -77,6 +83,7 @@ async function cargarMios() {
   if (!ok) { guardado.set("chofer_token", null); return false; }
   guardado.set("chofer_nombre", d.nombre);
   $("ingreso").classList.add("oculto"); $("mios").classList.remove("oculto");
+  $("pedir-cel").classList.toggle("oculto", !d.falta_celular);
   $("nombre").textContent = d.nombre; $("transporte").textContent = d.transporte ? "· " + d.transporte : "";
   $("asignados").innerHTML = d.asignados.length
     ? "<h2>Tus capacitaciones</h2>" + d.asignados.map((c) => {
@@ -96,13 +103,19 @@ async function cargarMios() {
 $("b-ingresar").onclick = async () => {
   $("err").textContent = "";
   const dni = $("dni").value.replace(/\D/g, ""), nacimiento = $("nac").value;
-  if (!/^\d{7,8}$/.test(dni) || !nacimiento) { $("err").textContent = "Completá tu DNI y tu fecha de nacimiento."; return; }
+  if (!/^\d{6,12}$/.test(dni) || !nacimiento) { $("err").textContent = "Completá tu DNI y tu fecha de nacimiento."; return; }
   $("b-ingresar").disabled = true;
   const { ok, d } = await post("chofer/ingresar", { dni, nacimiento });
   $("b-ingresar").disabled = false;
   if (!ok) { $("err").textContent = d.error || "No se pudo ingresar."; return; }
   guardado.set("chofer_token", d.token);
   cargarMios();
+};
+$("b-cel").onclick = async () => {
+  $("err-cel").textContent = "";
+  const { ok, d } = await post("chofer/celular", { token: guardado.get("chofer_token"), celular: $("cel").value });
+  if (!ok) { $("err-cel").textContent = d.error || "No se pudo guardar."; return; }
+  $("pedir-cel").innerHTML = "<b>✔ ¡Gracias!</b> Guardamos tu celular.";
 };
 $("b-salir").onclick = () => { guardado.set("chofer_token", null); guardado.set("chofer_nombre", null); location.reload(); };
 cargarMios().then((ok) => { if (!ok) cargarPublicos(); });

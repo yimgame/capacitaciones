@@ -22,7 +22,12 @@ Sin servicios externos.
   % para aprobar, **acceso abierto o solo asignados**, **vigencia** (anual, cada N meses o sin vencimiento).
 - **Choferes**: alta de a uno o **importación de archivos** (.xlsx, .xls, .csv, .txt) o pegado desde Excel,
   con revisión antes de guardar.
-- **Cumplimiento**: semáforo por transporte, estado por chofer y curso, **asignar / recursar / cambiar fecha
+- **Importar desde los sistemas**: maestro de proveedores (transportes, nº de proveedor, JRT, CUIT, contacto),
+  exporte de choferes del ERP (DNI → proveedor) y exporte del sistema de documentación de contratistas (DNI, CUIL,
+  estado, contratista). Se cruzan solos: el transporte de cada chofer sale del proveedor y, si no, del contratista.
+  Los archivos se leen en el navegador; al servidor llegan solo las columnas que usa la capacitación.
+- **Celular**: si el padrón no lo tiene, se le pide al chofer cuando entra.
+- **Cumplimiento**: semáforo por transporte (filtro por JRT), estado por chofer y curso, **asignar / recursar / cambiar fecha
   límite** a choferes marcados o a todo un transporte (también a los que se carguen después), recordatorio por
   WhatsApp, exportar a Excel.
 - **Panel de resultados**: aprobación por transporte, edad, atención vs. nota, preguntas que más fallan, alertas.

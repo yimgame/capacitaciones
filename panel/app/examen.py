@@ -72,9 +72,10 @@ def inicio(b):
     errores = []
     if len(nombre) < 3:
         errores.append("Nombre y apellido")
-    if not re.fullmatch(r"\d{7,8}", dni):
-        errores.append("DNI (7 u 8 números)")
-    if len(re.sub(r"\D", "", celular)) < 8:
+    if not padron.normalizar_dni(dni):
+        errores.append("DNI o documento (de 6 a 12 números)")
+    dni = padron.normalizar_dni(dni) or dni
+    if len(re.sub(r"\D", "", celular)) < 8 and not ch:      # el que entró con DNI puede no tenerlo cargado
         errores.append("Celular")
     if not 16 <= edad <= 90:
         errores.append("Fecha de nacimiento")
@@ -90,6 +91,7 @@ def inicio(b):
     if errores:
         return {"ok": False, "errores": errores}
 
+    padron.guardar_celular(dni, celular)          # si está en el padrón sin celular, queda el que escribió
     banco = cursos.banco_del_curso(curso)
     n = curso.get("preguntas_por_examen", cursos.POR_EXAMEN) if curso.get("examen") else 0
     elegidas = [{"pregunta": q["pregunta"], "correcta": q["correcta"],

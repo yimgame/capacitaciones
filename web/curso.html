@@ -54,7 +54,7 @@ button:disabled { opacity:.45; cursor:not-allowed; }
     <h1 id="titulo-curso">Capacitación</h1>
     <p class="suave" id="desc-curso"></p>
     <label for="nombre">Nombre y apellido</label><input id="nombre" type="text" autocomplete="name" placeholder="Juan Pérez">
-    <label for="dni">DNI</label><input id="dni" type="tel" inputmode="numeric" placeholder="Sin puntos, ej. 30123456">
+    <label for="dni">DNI o documento</label><input id="dni" type="tel" inputmode="numeric" placeholder="Sin puntos, ej. 30123456">
     <label for="celular">Celular</label><input id="celular" type="tel" autocomplete="tel" placeholder="Ej. 11 2345 6789">
     <label for="nacimiento">Fecha de nacimiento</label><input id="nacimiento" type="date" min="1930-01-01" max="2012-12-31">
     <label for="empresa">Empresa <span class="suave">(opcional)</span></label><input id="empresa" type="text">
@@ -189,7 +189,7 @@ $("btn-registro").onclick = () => {
               fecha_nacimiento: $("nacimiento").value };
   const faltan = [];
   if (r.nombre.length < 3) faltan.push("nombre y apellido");
-  if (!/^\d{7,8}$/.test(r.dni)) faltan.push("DNI (7 u 8 números)");
+  if (!/^\d{6,12}$/.test(r.dni)) faltan.push("DNI o documento (de 6 a 12 números)");
   if (r.celular.replace(/\D/g, "").length < 8) faltan.push("celular");
   const edad = (Date.now() - Date.parse(r.fecha_nacimiento)) / 31557600000;
   if (!(edad >= 16 && edad <= 90)) faltan.push("fecha de nacimiento");

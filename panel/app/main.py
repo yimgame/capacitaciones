@@ -301,8 +301,23 @@ async def chofer_cursos(req: Request):
     ch = padron.chofer_de_token(b.get("token"))
     if not ch:
         return JSONResponse({"ok": False, "error": "Sesión vencida: volvé a ingresar."}, status_code=401)
-    return {"ok": True, "nombre": ch["nombre"], "transporte": ch["transporte"],
+    return {"ok": True, "nombre": ch["nombre"], "transporte": ch["transporte"], "falta_celular": not ch["celular"],
             **padron.mis_cursos(ch, examen.resultados())}
+
+
+@app.post(PREFIJO + "/publico/chofer/celular")
+async def chofer_celular(req: Request):
+    try:
+        b = await req.json()
+    except ValueError:
+        b = {}
+    ch = padron.chofer_de_token(b.get("token"))
+    if not ch:
+        return JSONResponse({"ok": False, "error": "Sesión vencida: volvé a ingresar."}, status_code=401)
+    if not padron.guardar_celular(ch["dni"], b.get("celular")):
+        return JSONResponse({"ok": False, "error": "Revisá el número (con característica, ej. 11 2345 6789)."},
+                            status_code=400)
+    return {"ok": True}
 
 
 @app.get(PREFIJO + "/publico/curso/{slug}")
@@ -499,18 +514,31 @@ async def importar(req: Request):
     return {"ok": True, **r}
 
 
+@app.post(PREFIJO + "/api/importar-sistemas")
+async def importar_sistemas(req: Request):
+    """Maestro de proveedores + JDE + GCG (el navegador lee los .xlsx y manda solo las columnas útiles)."""
+    _mismo_origen(req)
+    u = _requiere(req, "gestion")
+    b = await req.json()
+    r = padron.importar_sistemas(b.get("maestro") or [], b.get("jde") or [], b.get("gcg") or [],
+                                 b.get("opciones") or {}, u["usuario"], simular=b.get("simular", True) is not False)
+    datos._cache["t"] = 0
+    return {"ok": True, **r}
+
+
 # ------------------------------------------------------------------ cumplimiento, asignaciones y recursadas
 @app.get(PREFIJO + "/cumplimiento", response_class=HTMLResponse)
 def cumplimiento_pagina(req: Request):
     u = _requiere(req)
     return plantillas.TemplateResponse(req, "cumplimiento.html", {
-        "u": u, "cursos": cursos.listar(), "estados": padron.ESTADOS,
+        "u": u, "cursos": cursos.listar(), "estados": padron.ESTADOS, "jrts": [] if _solo_transporte(u) else padron.jrts(),
         "transportes": [t for t in padron.transportes() if not _solo_transporte(u) or t["id"] == _solo_transporte(u)]})
 
 
-def _cumplimiento(u, transporte="", curso="", estado=""):
+def _cumplimiento(u, transporte="", curso="", estado="", jrt=""):
     tid = _solo_transporte(u) or _int(transporte)
-    filas = padron.cumplimiento(examen.resultados(), transporte_id=tid, curso=curso or None)
+    filas = padron.cumplimiento(examen.resultados(), transporte_id=tid, curso=curso or None,
+                                jrt=None if _solo_transporte(u) else (jrt or None))
     semaforo = padron.resumen_cumplimiento(filas)
     if estado:
         filas = [f for f in filas if f["estado"] == estado or (estado == "falta" and f["estado"] in
@@ -519,27 +547,27 @@ def _cumplimiento(u, transporte="", curso="", estado=""):
 
 
 @app.get(PREFIJO + "/api/cumplimiento")
-def cumplimiento_api(req: Request, transporte: str = "", curso: str = "", estado: str = ""):
+def cumplimiento_api(req: Request, transporte: str = "", curso: str = "", estado: str = "", jrt: str = ""):
     u = _requiere(req)
-    filas, semaforo = _cumplimiento(u, transporte, curso, estado)
-    claves = ("curso", "curso_titulo", "dni", "nombre", "celular", "transporte", "transporte_id", "estado",
+    filas, semaforo = _cumplimiento(u, transporte, curso, estado, jrt)
+    claves = ("curso", "curso_titulo", "dni", "nombre", "celular", "transporte", "transporte_id", "jrt", "estado",
               "estado_txt", "limite", "vence", "aprobado_el", "intentos", "mejor", "ultimo")
     return {"filas": [{k: f.get(k) for k in claves} for f in filas], "semaforo": semaforo,
             "reglas": [r for r in padron.reglas() if not _solo_transporte(u) or r["transporte_id"] == _solo_transporte(u)]}
 
 
 @app.get(PREFIJO + "/cumplimiento.csv")
-def cumplimiento_csv(req: Request, transporte: str = "", curso: str = "", estado: str = ""):
+def cumplimiento_csv(req: Request, transporte: str = "", curso: str = "", estado: str = "", jrt: str = ""):
     import csv
     import io
     u = _requiere(req)
-    filas, _ = _cumplimiento(u, transporte, curso, estado)
+    filas, _ = _cumplimiento(u, transporte, curso, estado, jrt)
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";")
-    w.writerow(["Transporte", "DNI", "Chofer", "Celular", "Curso", "Estado", "Fecha límite", "Aprobado el", "Vence",
+    w.writerow(["JRT", "Transporte", "DNI", "Chofer", "Celular", "Curso", "Estado", "Fecha límite", "Aprobado el", "Vence",
                 "Intentos", "Mejor nota"])
     for f in filas:
-        w.writerow([f["transporte"] or "", f["dni"], f["nombre"], f["celular"] or "", f["curso_titulo"],
+        w.writerow([f.get("jrt") or "", f["transporte"] or "", f["dni"], f["nombre"], f["celular"] or "", f["curso_titulo"],
                     f["estado_txt"].split(" ", 1)[1], f["limite"] or "", f["aprobado_el"] or "", f["vence"] or "",
                     f["intentos"], "" if f["mejor"] is None else f["mejor"]])
     return Response("\ufeff" + buf.getvalue(), media_type="text/csv; charset=utf-8",

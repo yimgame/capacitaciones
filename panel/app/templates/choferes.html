@@ -37,14 +37,15 @@
   <div class="titulo-fila"><h2>{{ choferes|length }} chofer(es)</h2></div>
   <div class="tabla-scroll"><table>
     <thead><tr>{% if gestion %}<th><input type="checkbox" id="todos" title="Marcar todos"></th>{% endif %}
-      <th>Chofer</th><th>DNI</th><th>Celular</th><th>Nacimiento</th>{% if not coord %}<th>Transporte</th>{% endif %}<th></th></tr></thead>
+      <th>Chofer</th><th>DNI</th><th>CUIL</th><th>Celular</th><th>Nacimiento</th>{% if not coord %}<th>Transporte</th>{% endif %}<th>GCG</th><th></th></tr></thead>
     <tbody>
     {% for ch in choferes %}
       <tr class="{{ '' if ch.activo else 'apagado' }}">
         {% if gestion %}<td><input type="checkbox" class="marca" value="{{ ch.dni }}"></td>{% endif %}
-        <td>{{ ch.nombre }}</td><td>{{ ch.dni }}</td><td>{{ ch.celular or '' }}</td>
+        <td>{{ ch.nombre }}</td><td>{{ ch.dni }}</td><td>{{ ch.cuil or '' }}</td><td>{{ ch.celular or '' }}</td>
         <td>{{ ch.nacimiento.split('-')|reverse|join('/') if ch.nacimiento else '—' }}</td>
-        {% if not coord %}<td>{{ ch.transporte or 'Sin transporte' }}</td>{% endif %}
+        {% if not coord %}<td>{{ ch.transporte or 'Sin transporte' }}{% if ch.nro_proveedor %}<div class="suave">prov. {{ ch.nro_proveedor }}</div>{% endif %}</td>{% endif %}
+        <td class="suave">{{ (ch.gcg_estado or '')|capitalize }}</td>
         <td class="acciones">{% if carga %}
           <button class="chico" type="button" onclick='editar({{ ch|tojson }})'>✏️</button>
           <form method="post" style="display:inline"><input type="hidden" name="dni" value="{{ ch.dni }}">
@@ -53,7 +54,7 @@
           </form>{% endif %}</td>
       </tr>
     {% else %}
-      <tr><td colspan="7" class="suave">No hay choferes{{ ' con ese filtro' if buscar or filtro_t }}. Cargalos abajo, de a uno o con una lista.</td></tr>
+      <tr><td colspan="10" class="suave">No hay choferes{{ ' con ese filtro' if buscar or filtro_t }}. Cargalos abajo, de a uno o con una lista.</td></tr>
     {% endfor %}
     </tbody>
   </table></div>
@@ -96,13 +97,47 @@
 {% endif %}
 
 {% if gestion %}
+<div class="tarjeta" id="sistemas">
+  <h2>Importar desde los sistemas (Maestro de proveedores, JDE, GCG)</h2>
+  <p class="suave">Subí los exportes tal como salen (podés subir uno, dos o los tres). Se leen en tu navegador y al panel
+    llegan solo las columnas que usa la capacitación. Nada se guarda hasta que tocás <b>Importar</b>.</p>
+  <ul class="suave">
+    <li><b>Maestro de proveedores</b>: nº de proveedor, razón social, JRT, estado, tipo de servicio, CUIT, mail, teléfono, provincia → <b>transportes</b>.</li>
+    <li><b>JDE (DNI actualizados)</b>: DNI (A), nombre (B), nº de proveedor (E), CUIL (L) → a qué transporte pertenece cada chofer.</li>
+    <li><b>GCG (ExportaciónExcel)</b>: Id (B), nombre (C), CUIT/CUIL (D), DNI (E), estado (K), contratista (O), subcontratista (P) → <b>choferes</b>.</li>
+  </ul>
+  <p class="suave">Transporte de cada chofer: primero por el proveedor de JDE contra el maestro; si no, por el nombre del contratista de GCG.
+    Nunca se pisan la fecha de nacimiento ni el celular (los completa el chofer).</p>
+  <div class="dos-col">
+    <label>Maestro de proveedores (.xlsx)<input type="file" id="s-maestro" accept=".xlsx,.xls"></label>
+    <label>JDE · DNI actualizados (.xlsx)<input type="file" id="s-jde" accept=".xlsx,.xls"></label>
+    <label>GCG · ExportaciónExcel (.xlsx)<input type="file" id="s-gcg" accept=".xlsx,.xls"></label>
+  </div>
+  <h3>Qué choferes de GCG entran</h3>
+  <div class="fila-form">
+    {% for e in ['HABILITADO', 'PARCIALMENTE HABILITADO', 'INHABILITADO', 'BLOQUEADO'] %}
+    <label class="switch"><input type="checkbox" class="s-estado" value="{{ e }}" {{ 'checked' if e in ('HABILITADO', 'PARCIALMENTE HABILITADO') }}> {{ e|capitalize }}</label>
+    {% endfor %}
+  </div>
+  <div class="fila-form">
+    <label class="switch"><input type="checkbox" id="s-crear" checked> Crear el transporte si el contratista de GCG no está en el maestro</label>
+    <label class="switch"><input type="checkbox" id="s-solojde"> Sumar también los choferes que están solo en JDE (hay muchos históricos)</label>
+  </div>
+  <div class="fila-form" style="margin-top:8px">
+    <button type="button" id="s-revisar">🔍 Revisar</button>
+    <button type="button" class="primario" id="s-importar" disabled>⬆ Importar</button>
+  </div>
+  <div id="s-resultado"></div>
+</div>
+
 <div class="tarjeta">
   <h2>Transportes</h2>
   <div class="tabla-scroll"><table>
-    <thead><tr><th>Nombre</th><th>Choferes activos</th><th>Estado</th><th></th></tr></thead>
+    <thead><tr><th>Nombre</th><th>Proveedor</th><th>JRT</th><th>Choferes activos</th><th>Estado</th><th></th></tr></thead>
     <tbody>{% for t in transportes %}
       <tr class="{{ '' if t.activo else 'apagado' }}">
-        <td><input form="ft{{ t.id }}" name="nombre" value="{{ t.nombre }}" maxlength="80"></td><td>{{ t.choferes }}</td>
+        <td><input form="ft{{ t.id }}" name="nombre" value="{{ t.nombre }}" maxlength="80"></td>
+        <td>{{ t.nro_proveedor or '' }}</td><td>{{ t.jrt or '' }}</td><td>{{ t.choferes }}</td>
         <td><select form="ft{{ t.id }}" name="activo"><option value="1" {{ 'selected' if t.activo }}>Activo</option><option value="0" {{ 'selected' if not t.activo }}>Inactivo</option></select></td>
         <td><button form="ft{{ t.id }}" class="chico">Guardar</button></td></tr>
     {% endfor %}</tbody>
@@ -178,6 +213,75 @@ async function importar(simular) {
     $("b-importar").disabled = !simular || !(d.nuevos + d.actualizados);
     if (!simular) setTimeout(() => location.reload(), 2500);
   } catch (e) { $("i-resultado").innerHTML = `<p class="error">${esc(e.message)}</p>`; $("b-importar").disabled = true; }
+}
+// --- importar desde los sistemas
+const norm = (t) => String(t ?? "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+const LETRA = (l) => l.split("").reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0) - 1;
+const SISTEMAS = {
+  maestro: { clave: ["nrodeproveedor"], campos: { prov: [["nrodeproveedor"], "A"], razon: [["razonsocial"], "B"], jrt: [["jrt"], "C"],
+             estado: [["estadoactual"], "D"], servicio: [["tiposervicio*"], "E"], mail: [["mail", "email"], "F"],
+             tel: [["telefono"], "G"], provincia: [["provincia"], "J"], cuit: [["cuit"], "K"] } },
+  jde: { clave: ["idvehiculo"], campos: { dni: [["idvehiculo"], "A"], nombre: [["descripcion"], "B"], prov: [["nodeprop", "ndeprop", "nroprop"], "E"],
+         serie: [["noserieveh", "nserieveh"], "L"], fecha: [["fechaactz"], "U"] } },
+  gcg: { clave: ["nombredominio", "cuitcuil"], campos: { id: [["id"], "B"], nombre: [["nombredominio"], "C"], cuil: [["cuitcuil"], "D"],
+         dni: [["dni"], "E"], estado: [["estado"], "K"], contratista: [["contratista"], "O"], subcontratista: [["subcontratista"], "P"] } },
+};
+async function leerSistema(input, tipo) {
+  const f = input.files[0]; if (!f) return { filas: [], info: "" };
+  const wb = XLSX.read(await f.arrayBuffer(), { cellDates: false, dense: true });
+  const def = SISTEMAS[tipo];
+  for (const nombre of wb.SheetNames) {
+    const filas = XLSX.utils.sheet_to_json(wb.Sheets[nombre], { header: 1, raw: true, blankrows: false, defval: "" });
+    const iTit = filas.findIndex((r) => def.clave.every((k) => r.some((c) => norm(c) === k)));
+    if (iTit < 0) continue;
+    const tit = filas[iTit].map(norm);
+    const idx = {}, usadas = [];
+    for (const [campo, [nombres, letra]] of Object.entries(def.campos)) {
+      let i = tit.findIndex((t) => nombres.some((n) => n.endsWith("*") ? t.startsWith(n.slice(0, -1)) : t === n));
+      if (i < 0) i = LETRA(letra);
+      idx[campo] = i; usadas.push(`${campo}=${filas[iTit][i] ?? letra}`);
+    }
+    const datos = filas.slice(iTit + 1).map((r) => Object.fromEntries(Object.entries(idx).map(([k, i]) => [k, r[i] ?? ""])));
+    return { filas: datos, info: `${f.name} · hoja «${nombre}» · ${datos.length} filas` };
+  }
+  throw new Error(`${f.name}: no encuentro los títulos esperados (${def.clave.join(", ")}). ¿Es el archivo correcto?`);
+}
+let cacheSistemas = null;
+["s-maestro", "s-jde", "s-gcg"].forEach((id) => $(id) && ($(id).onchange = () => { cacheSistemas = null; $("s-importar").disabled = true; }));
+async function sistemas(simular) {
+  $("s-resultado").innerHTML = "<p class='suave'>Leyendo archivos… (los grandes pueden tardar unos segundos)</p>";
+  $("s-revisar").disabled = $("s-importar").disabled = true;
+  try {
+    if (!cacheSistemas) {
+      const [m, j, g] = await Promise.all([leerSistema($("s-maestro"), "maestro"), leerSistema($("s-jde"), "jde"), leerSistema($("s-gcg"), "gcg")]);
+      if (!m.filas.length && !j.filas.length && !g.filas.length) throw new Error("Elegí al menos un archivo.");
+      cacheSistemas = { m, j, g };
+    }
+    const { m, j, g } = cacheSistemas;
+    const opciones = { gcg_estados: [...document.querySelectorAll(".s-estado:checked")].map((x) => x.value),
+                       crear_transportes: $("s-crear").checked, incluir_solo_jde: $("s-solojde").checked };
+    const d = await api("/api/importar-sistemas", { maestro: m.filas, jde: j.filas, gcg: g.filas, opciones, simular });
+    const li = (t) => `<li>${t}</li>`;
+    $("s-resultado").innerHTML =
+      `<p class="aviso">${simular ? "Revisión (todavía no se guardó nada)" : "✔ Importado"}<br><span class="suave">${[m.info, j.info, g.info].filter(Boolean).map(esc).join("<br>")}</span></p><ul>` +
+      li(`Transportes: <b>${d.transportes_nuevos}</b> nuevos, <b>${d.transportes_actualizados}</b> actualizados`) +
+      li(`Choferes: <b>${d.choferes_nuevos}</b> nuevos, <b>${d.choferes_actualizados}</b> actualizados (total ${d.total_choferes})`) +
+      li(`Transporte encontrado por JDE → maestro: <b>${d.por_jde}</b> · por nombre del contratista: <b>${d.por_contratista}</b> · sin transporte: <b>${d.sin_transporte}</b>`) +
+      (d.descartados_estado ? li(`No entran por el estado en GCG: ${d.descartados_estado}`) : "") +
+      (d.documentos_invalidos ? li(`Documentos inválidos (se saltean): ${d.documentos_invalidos}`) : "") +
+      `</ul>` +
+      (d.por_jrt.length ? `<details open><summary>Choferes por JRT</summary><ul>${d.por_jrt.map(([k, n]) => li(`${esc(k)}: ${n}`)).join("")}</ul></details>` : "") +
+      (d.transportes_creados_por_nombre.length ? `<details><summary>Transportes que se crean desde GCG (no están en el maestro)</summary><ul>${d.transportes_creados_por_nombre.map((x) => li(esc(x))).join("")}</ul></details>` : "") +
+      (d.contratistas_sin_match.length ? `<details><summary>Contratistas de GCG sin transporte</summary><ul>${d.contratistas_sin_match.map(([k, n]) => li(`${esc(k)} (${n})`)).join("")}</ul></details>` : "");
+    $("s-importar").disabled = !simular;
+    if (!simular) { cacheSistemas = null; setTimeout(() => location.reload(), 4000); }
+  } catch (e) { $("s-resultado").innerHTML = `<p class="error">${esc(e.message)}</p>`; }
+  $("s-revisar").disabled = false;
+}
+if ($("s-revisar")) {
+  $("s-revisar").onclick = () => sistemas(true);
+  $("s-importar").onclick = () => { if (confirm("¿Importar a la base? (los datos quedan cargados)")) sistemas(false); };
+  document.querySelectorAll(".s-estado, #s-crear, #s-solojde").forEach((x) => (x.onchange = () => ($("s-importar").disabled = true)));
 }
 if ($("b-revisar")) { $("b-revisar").onclick = () => importar(true); $("b-importar").onclick = () => importar(false);
                       $("i-texto").oninput = () => ($("b-importar").disabled = true); }

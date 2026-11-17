@@ -6,6 +6,8 @@
 <section class="filtros tarjeta">
   {% if not coord %}<label>Transporte<select id="f-transporte"><option value="">Todos</option>
     {% for t in transportes %}<option value="{{ t.id }}">{{ t.nombre }}</option>{% endfor %}</select></label>{% endif %}
+  {% if jrts %}<label>JRT<select id="f-jrt"><option value="">Todos</option>
+    {% for j in jrts %}<option>{{ j }}</option>{% endfor %}</select></label>{% endif %}
   <label>Curso<select id="f-curso"><option value="">Todos</option>
     {% for c in cursos %}<option value="{{ c.slug }}">{{ c.titulo }}</option>{% endfor %}</select></label>
   <label>Estado<select id="f-estado"><option value="">Todos</option><option value="falta">Les falta (pendiente, fuera de término o vencido)</option>
@@ -61,6 +63,7 @@ function filtros() {
   const p = new URLSearchParams();
   if ($("f-transporte") && $("f-transporte").value) p.set("transporte", $("f-transporte").value);
   if ($("f-curso").value) p.set("curso", $("f-curso").value);
+  if ($("f-jrt") && $("f-jrt").value) p.set("jrt", $("f-jrt").value);
   if ($("f-estado").value) p.set("estado", $("f-estado").value);
   return p;
 }
@@ -86,10 +89,10 @@ function whatsapp(f) {
 function dibujar() {
   const s = datos.semaforo;
   $("t-semaforo").innerHTML = s.length
-    ? `<thead><tr><th>Transporte</th><th class="n">Al día</th><th class="n">✅ Aprobados</th><th class="n">🟡 Por vencer</th><th class="n">⚪ Pendientes</th><th class="n">🔴 Fuera de término</th><th class="n">🔴 Vencidos</th><th class="n">Total</th></tr></thead><tbody>` +
+    ? `<thead><tr><th>Transporte</th><th>JRT</th><th class="n">Al día</th><th class="n">✅ Aprobados</th><th class="n">🟡 Por vencer</th><th class="n">⚪ Pendientes</th><th class="n">🔴 Fuera de término</th><th class="n">🔴 Vencidos</th><th class="n">Total</th></tr></thead><tbody>` +
       s.map((g) => {
         const c = g.al_dia_pct >= 85 ? "var(--verde)" : g.al_dia_pct >= 60 ? "var(--ambar)" : "var(--rojo)";
-        return `<tr><td><b>${esc(g.transporte)}</b></td><td class="n"><span class="barra-pct"><span style="width:${g.al_dia_pct}%;background:${c}"></span></span> <b>${g.al_dia_pct}%</b></td>` +
+        return `<tr><td><b>${esc(g.transporte)}</b></td><td>${esc(g.jrt || "")}</td><td class="n"><span class="barra-pct"><span style="width:${g.al_dia_pct}%;background:${c}"></span></span> <b>${g.al_dia_pct}%</b></td>` +
           `<td class="n">${g.aprobado}</td><td class="n">${g.por_vencer}</td><td class="n">${g.pendiente}</td><td class="n">${g.atrasado}</td><td class="n">${g.vencido}</td><td class="n">${g.total}</td></tr>`;
       }).join("") + "</tbody>"
     : `<tr><td class="suave">Todavía no hay cursos asignados${GESTION ? ": cargá los choferes en <a href='" + P + "/choferes'>Choferes</a> y asignales cursos acá abajo." : "."}</td></tr>`;
@@ -146,7 +149,7 @@ if (GESTION) {
   document.querySelectorAll("[data-accion]").forEach((b) => (b.onclick = () => accion(b.dataset.accion)));
   $("g-quien").onchange = () => ($("g-auto-box").hidden = $("g-quien").value === "marcados");
 }
-["f-transporte", "f-curso", "f-estado"].forEach((id) => $(id) && ($(id).onchange = cargar));
+["f-transporte", "f-jrt", "f-curso", "f-estado"].forEach((id) => $(id) && ($(id).onchange = cargar));
 $("f-buscar").oninput = dibujar;
 cargar();
 </script>
