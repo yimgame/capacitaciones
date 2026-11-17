@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{% block titulo %}Panel de capacitación{% endblock %}</title>
+<link rel="stylesheet" href="{{ P }}/static/panel.css?v=2">
+</head>
+<body>
+<header class="barra">
+  <a class="marca" href="{{ P }}/">🚚 Capacitación de choferes <span class="suave">· Panel de evaluadores</span></a>
+  {% if u %}
+  <nav>
+    <a href="{{ P }}/">Panel</a>
+    <a href="{{ P }}/cumplimiento">Cumplimiento</a>
+    <a href="{{ P }}/choferes">Choferes</a>
+    {% if 'cursos' in u.puede %}<a href="{{ P }}/cursos">Cursos</a>{% endif %}
+    {% if 'usuarios' in u.puede %}<a href="{{ P }}/usuarios">Usuarios</a>{% endif %}
+    <a href="{{ P }}/cuenta">{{ u.nombre or u.usuario }}</a>
+    <form method="post" action="{{ P }}/salir"><button class="link">Salir</button></form>
+  </nav>
+  {% endif %}
+</header>
+<main>{% block contenido %}{% endblock %}</main>
+</body>
+</html>

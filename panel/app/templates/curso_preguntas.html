@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block titulo %}Preguntas · {{ c.titulo }}{% endblock %}
+{% block contenido %}
+<p><a href="{{ P }}/cursos/{{ c.slug }}">← {{ c.titulo }}</a> · <a href="/{{ c.slug }}" target="_blank">Ver la página del curso ↗</a></p>
+
+<div class="tarjeta">
+  <h1>Evaluación de «{{ c.titulo }}»</h1>
+  {% if not c.examen %}<p class="aviso">Este curso tiene la evaluación <b>apagada</b>: las preguntas se guardan pero no se toman
+    hasta que la prendas en <a href="{{ P }}/cursos/{{ c.slug }}">la configuración del curso</a>.</p>{% endif %}
+  <p class="suave" id="origen"></p>
+  <div class="dos-col">
+    <label>Preguntas por examen (se eligen al azar)<input id="por-examen" type="number" min="1" max="50"></label>
+    <label>Porcentaje para aprobar<input id="aprobacion" type="number" min="1" max="100"></label>
+  </div>
+  <div class="fila-form">
+    <button type="button" id="b-agregar">➕ Agregar pregunta</button>
+    <button type="button" id="b-ley">📥 Copiar las {{ banco_ley_total }} preguntas de la Ley 24.449</button>
+    <button type="button" id="b-vaciar">🗑 Borrar todas</button>
+    <input id="buscar" placeholder="Buscar pregunta…" style="flex:1 1 200px">
+  </div>
+</div>
+
+<div id="lista"></div>
+
+<div class="tarjeta guardar-fijo">
+  <button class="primario" type="button" id="b-guardar">💾 Guardar preguntas</button>
+  <span id="estado" class="suave"></span>
+</div>
+
+<style>
+.preg { border-left: 4px solid var(--azul); }
+.preg-cab { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+.preg-cab b { flex: 1; }
+.opc { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+.opc input { flex: 1; }
+.opc .marca-ok { color: var(--verde); font-weight: 700; width: 92px; flex: none; font-size: 13px; }
+.opc .marca-mal { color: var(--rojo); width: 92px; flex: none; font-size: 13px; }
+.guardar-fijo { position: sticky; bottom: 0; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; z-index: 5; }
+</style>
+
+<script>
+const P = "{{ P }}", SLUG = "{{ c.slug }}", MAX_INC = 5;
+const INICIAL = {{ datos | tojson }};
+const $ = (id) => document.getElementById(id);
+let preguntas = INICIAL.preguntas.map((q) => ({ ...q, incorrectas: [...q.incorrectas] }));
+let cambios = false;
+$("por-examen").value = INICIAL.preguntas_por_examen;
+$("aprobacion").value = INICIAL.aprobacion;
+
+function marcar() { cambios = true; $("estado").textContent = "Hay cambios sin guardar."; origen(); }
+function origen() {
+  $("origen").innerHTML = preguntas.length
+    ? `Este curso usa <b>sus propias ${preguntas.length} preguntas</b>.`
+    : `Este curso todavía no tiene preguntas propias: el examen sale del <b>banco de la Ley 24.449</b> ({{ banco_ley_total }} preguntas). Agregá preguntas o copiá ese banco para editarlo.`;
+}
+
+function campo(valor, al_cambiar, placeholder) {
+  const i = document.createElement("input");
+  i.value = valor; i.placeholder = placeholder; i.maxLength = 300;
+  i.oninput = () => { al_cambiar(i.value); marcar(); };
+  return i;
+}
+
+function dibujar() {
+  const filtro = $("buscar").value.trim().toLowerCase();
+  const lista = $("lista"); lista.innerHTML = "";
+  preguntas.forEach((q, idx) => {
+    if (filtro && !(q.pregunta + " " + q.correcta + " " + q.incorrectas.join(" ")).toLowerCase().includes(filtro)) return;
+    const t = document.createElement("div"); t.className = "tarjeta preg";
+    const cab = document.createElement("div"); cab.className = "preg-cab";
+    cab.innerHTML = `<b>Pregunta ${idx + 1}</b>`;
+    const arriba = document.createElement("button"); arriba.type = "button"; arriba.className = "chico"; arriba.textContent = "↑";
+    arriba.title = "Subir"; arriba.disabled = idx === 0;
+    arriba.onclick = () => { [preguntas[idx - 1], preguntas[idx]] = [preguntas[idx], preguntas[idx - 1]]; marcar(); dibujar(); };
+    const borrar = document.createElement("button"); borrar.type = "button"; borrar.className = "chico"; borrar.textContent = "🗑 Borrar";
+    borrar.onclick = () => { if (confirm("¿Borrar la pregunta " + (idx + 1) + "?")) { preguntas.splice(idx, 1); marcar(); dibujar(); } };
+    cab.append(arriba, borrar);
+    const texto = document.createElement("textarea"); texto.rows = 2; texto.maxLength = 500; texto.value = q.pregunta;
+    texto.placeholder = "Texto de la pregunta";
+    texto.oninput = () => { q.pregunta = texto.value; marcar(); };
+    t.append(cab, texto);
+
+    const ok = document.createElement("div"); ok.className = "opc";
+    ok.innerHTML = `<span class="marca-ok">✔ Correcta</span>`;
+    ok.append(campo(q.correcta, (v) => (q.correcta = v), "Respuesta correcta"));
+    t.append(ok);
+    q.incorrectas.forEach((inc, j) => {
+      const f = document.createElement("div"); f.className = "opc";
+      f.innerHTML = `<span class="marca-mal">✘ Incorrecta</span>`;
+      const quitar = document.createElement("button"); quitar.type = "button"; quitar.className = "chico"; quitar.textContent = "✕";
+      quitar.title = "Quitar esta opción";
+      quitar.onclick = () => { q.incorrectas.splice(j, 1); marcar(); dibujar(); };
+      f.append(campo(inc, (v) => (q.incorrectas[j] = v), "Respuesta incorrecta"), quitar);
+      t.append(f);
+    });
+    if (q.incorrectas.length < MAX_INC) {
+      const mas = document.createElement("button"); mas.type = "button"; mas.className = "chico"; mas.textContent = "➕ Opción incorrecta";
+      mas.onclick = () => { q.incorrectas.push(""); marcar(); dibujar(); };
+      t.append(mas);
+    }
+    lista.append(t);
+  });
+  origen();
+}
+
+$("buscar").oninput = dibujar;
+$("b-agregar").onclick = () => {
+  $("buscar").value = "";
+  preguntas.push({ pregunta: "", correcta: "", incorrectas: ["", ""] }); marcar(); dibujar();
+  const ult = $("lista").lastElementChild; if (ult) { ult.scrollIntoView({ behavior: "smooth" }); ult.querySelector("textarea").focus(); }
+};
+$("b-vaciar").onclick = () => {
+  if (!preguntas.length || !confirm("¿Borrar TODAS las preguntas de este curso? Si guardás así, el examen vuelve a salir del banco de la Ley 24.449.")) return;
+  preguntas = []; marcar(); dibujar();
+};
+$("b-ley").onclick = async () => {
+  if (preguntas.length && !confirm("Se agregan las preguntas de la Ley 24.449 a las que ya tiene el curso. ¿Seguir?")) return;
+  const r = await fetch(P + "/api/preguntas/ley", { credentials: "same-origin" });
+  if (!r.ok) { $("estado").textContent = "No pude traer el banco de la Ley."; return; }
+  const ya = new Set(preguntas.map((q) => q.pregunta.trim().toLowerCase()));
+  for (const q of await r.json()) if (!ya.has(q.pregunta.trim().toLowerCase())) preguntas.push(q);
+  marcar(); dibujar();
+};
+$("b-guardar").onclick = async () => {
+  $("b-guardar").disabled = true; $("estado").textContent = "Guardando…";
+  try {
+    const r = await fetch(P + "/api/preguntas/" + SLUG, {
+      method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ preguntas, preguntas_por_examen: $("por-examen").value, aprobacion: $("aprobacion").value }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) throw new Error(d.error || d.detail || "error " + r.status);
+    preguntas = d.preguntas; cambios = false; dibujar();
+    $("estado").textContent = "✔ Guardado.";
+  } catch (e) {
+    $("estado").textContent = "✖ " + e.message;
+  }
+  $("b-guardar").disabled = false;
+};
+$("por-examen").oninput = marcar; $("aprobacion").oninput = marcar;
+window.addEventListener("beforeunload", (e) => { if (cambios) { e.preventDefault(); e.returnValue = ""; } });
+dibujar();
+$("estado").textContent = "";
+</script>
+{% endblock %}

@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Capacitación</title>
+<style>
+:root { --bg:#f5f6f8; --panel:#fff; --txt:#1c2230; --suave:#677085; --borde:#e2e5eb; --acento:#1f6feb; --ok:#1a7f37; --mal:#cf222e; --aviso:#9a6700; }
+@media (prefers-color-scheme: dark) { :root { --bg:#0f1218; --panel:#171b23; --txt:#e6e9ef; --suave:#8b93a5; --borde:#2a3040; --acento:#4c8dff; --ok:#3fb950; --mal:#f85149; --aviso:#d29922; } }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--txt); font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+main { max-width:640px; margin:0 auto; padding:16px; }
+.panel { background:var(--panel); border:1px solid var(--borde); border-radius:12px; padding:18px; margin-bottom:14px; }
+h1 { font-size:22px; margin:0 0 6px; } h2 { font-size:18px; margin:0 0 10px; }
+.suave { color:var(--suave); font-size:14px; }
+label { display:block; margin:12px 0 4px; font-weight:600; }
+input[type=text], input[type=tel], input[type=date] { width:100%; font:inherit; padding:12px; border:1px solid var(--borde); border-radius:8px; background:var(--bg); color:var(--txt); }
+button { width:100%; font:inherit; font-weight:600; padding:14px; margin-top:16px; border:0; border-radius:10px; background:var(--acento); color:#fff; cursor:pointer; }
+button:disabled { opacity:.45; cursor:not-allowed; }
+.error { color:var(--mal); font-size:14px; min-height:1em; margin-top:6px; }
+.oculto { display:none; }
+.consent { background:var(--bg); border:1px solid var(--borde); border-radius:8px; padding:12px; font-size:14px; }
+.consent li { margin:4px 0; }
+.check { display:flex; gap:10px; align-items:flex-start; margin-top:12px; font-weight:400; }
+.check input { width:22px; height:22px; flex:none; margin-top:2px; }
+#preview.oculta { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
+/* "sin vista": el recuadro de la cámara no se ve, pero sigue en la página para que el video siga entregando cuadros
+   (con display:none algunos navegadores dejan de decodificarlo y el control de atención no mide) */
+.camara.invisible { position:fixed; left:0; bottom:0; width:1px; height:1px; overflow:hidden; opacity:0; padding:0; border:0; margin:0; pointer-events:none; }
+.modos { display:grid; gap:10px; margin-top:12px; } .modo { text-align:left; background:var(--bg); color:var(--txt); border:2px solid var(--borde); margin:0; }
+.modo:hover { border-color:var(--acento); } .modo b { display:block; font-size:17px; } .modo span { font-weight:400; font-size:14px; color:var(--suave); }
+.recurso { margin:8px 0 14px; } .recurso img { max-width:100%; border-radius:8px; }
+#preview { width:96px; height:72px; border-radius:8px; object-fit:cover; transform:scaleX(-1); background:#000; }
+.camara { position:sticky; top:8px; z-index:5; display:flex; gap:10px; align-items:center; background:var(--panel); border:1px solid var(--borde); border-radius:12px; padding:8px; margin-bottom:12px; }
+.estado { font-weight:600; } .estado.ok { color:var(--ok); } .estado.mal { color:var(--aviso); }
+.barra { height:6px; background:var(--borde); border-radius:3px; overflow:hidden; margin-top:6px; } .barra > div { height:100%; background:var(--ok); width:0; transition:width .4s; }
+.material h3 { font-size:16px; margin:16px 0 6px; } .material ul { padding-left:20px; margin:0; } .material li { margin:4px 0; }
+.video { position:relative; width:100%; aspect-ratio:16/9; border-radius:8px; overflow:hidden; background:#000; margin:8px 0 14px; }
+.video iframe, .video video { position:absolute; inset:0; width:100%; height:100%; border:0; }
+.pregunta { border:1px solid var(--borde); border-radius:10px; padding:12px; margin:12px 0; }
+.pregunta p { margin:0 0 8px; font-weight:600; }
+.opcion { display:flex; gap:10px; align-items:flex-start; padding:8px; border-radius:8px; font-weight:400; margin:4px 0; cursor:pointer; }
+.opcion:hover { background:var(--bg); } .opcion input { width:20px; height:20px; flex:none; margin-top:3px; }
+.res-ok { color:var(--ok); } .res-mal { color:var(--mal); }
+.falla { border:1px solid var(--borde); border-radius:8px; padding:10px; margin:8px 0; font-size:15px; }
+.metricas { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; } .metricas div { background:var(--bg); border-radius:8px; padding:10px; } .metricas b { display:block; font-size:20px; }
+</style>
+</head>
+<body>
+<main>
+  <!-- 1. Registro -->
+  <section id="paso-registro" class="panel">
+    <p class="suave" style="margin:0 0 6px"><a href="/">← Capacitaciones</a></p>
+    <h1 id="titulo-curso">Capacitación</h1>
+    <p class="suave" id="desc-curso"></p>
+    <label for="nombre">Nombre y apellido</label><input id="nombre" type="text" autocomplete="name" placeholder="Juan Pérez">
+    <label for="dni">DNI</label><input id="dni" type="tel" inputmode="numeric" placeholder="Sin puntos, ej. 30123456">
+    <label for="celular">Celular</label><input id="celular" type="tel" autocomplete="tel" placeholder="Ej. 11 2345 6789">
+    <label for="nacimiento">Fecha de nacimiento</label><input id="nacimiento" type="date" min="1930-01-01" max="2012-12-31">
+    <label for="empresa">Empresa <span class="suave">(opcional)</span></label><input id="empresa" type="text">
+    <div class="error" id="err-registro"></div>
+    <button id="btn-registro">Continuar</button>
+  </section>
+
+  <!-- 1b. Elegir cómo hacerlo -->
+  <section id="paso-modo" class="panel oculto">
+    <h2>¿Cómo querés hacer la capacitación?</h2>
+    <div class="modos">
+      <button class="modo" id="btn-modo-camara"><b>📷 Con control de atención</b>
+        <span>La cámara del celular estima si estás mirando el material. No se graba nada.</span></button>
+      <button class="modo" id="btn-modo-sin"><b>📖 Sin cámara</b><span>Estudiás el material y hacés la evaluación.</span></button>
+    </div>
+    <div class="error" id="err-modo"></div>
+  </section>
+
+  <!-- 2. Consentimiento -->
+  <section id="paso-consent" class="panel oculto">
+    <h2>Control de atención con la cámara</h2>
+    <div class="consent">
+      Mientras estudiás el material, la cámara frontal se usa para estimar si estás mirando la pantalla.
+      <ul>
+        <li><b>Todo se procesa en tu celular.</b> No se graban ni se envían fotos ni video.</li>
+        <li>Solo se registran <b>números</b>: porcentaje de atención, cantidad de distracciones y
+          veces que saliste de la página.</li>
+        <li>No se guardan datos de tu cara. La cámara se apaga al terminar el estudio.</li>
+        <li>El resultado es una estimación: la luz o el ángulo del celular pueden afectarla.</li>
+        <li>Finalidad: registrar tu capacitación. Podés pedir ver o borrar tus datos a la empresa.</li>
+      </ul>
+    </div>
+    <label class="check"><input type="checkbox" id="acepto"> Leí lo anterior y doy mi consentimiento para el control de atención con la cámara.</label>
+    <div class="error" id="err-consent"></div>
+    <button id="btn-consent" disabled>Activar cámara y empezar</button>
+    <p class="suave oculto" style="margin-top:12px" id="alt-sin">¿No querés usar la cámara?
+      <a href="#" id="link-sin">Hacela sin control de atención</a>.</p>
+  </section>
+
+  <!-- 3. Estudio -->
+  <section id="paso-estudio" class="oculto">
+    <div class="camara" id="barra-camara">
+      <video id="preview" playsinline muted></video>
+      <div style="flex:1">
+        <div id="estado" class="estado">Preparando cámara…</div>
+        <div class="suave" id="estado-detalle">Ubicá el celular de frente, con tu cara visible.</div>
+        <div class="barra"><div id="barra-atencion"></div></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Material de estudio</h2>
+      <div id="videos"></div>
+      <div class="material" id="material"></div>
+      <p class="suave" id="tiempo-min"></p>
+      <button id="btn-estudio" disabled>Terminé, ir a la evaluación</button>
+    </div>
+  </section>
+
+  <!-- 4. Examen -->
+  <section id="paso-examen" class="panel oculto">
+    <h2>Evaluación</h2>
+    <p class="suave" id="txt-aprobacion">Elegí una opción en cada pregunta.</p>
+    <form id="form-examen"></form>
+    <div class="error" id="err-examen"></div>
+    <button id="btn-examen">Enviar respuestas</button>
+  </section>
+
+  <!-- 5. Resultado -->
+  <section id="paso-resultado" class="panel oculto"></section>
+</main>
+
+<script type="module">
+// ----------------------------------------------------------------- configuración
+// Todo el contenido (material, videos, tiempos, modo de atención) sale del panel: /panel/cursos/<slug>.
+const SLUG = location.pathname.replace(/^\/+|\/+$/g, "").toLowerCase();
+let CURSO = null;
+const API = "/panel/publico/examen";   // el panel arma y corrige el examen y guarda el resultado (sin n8n desde 2026-11-17)
+const MEDIAPIPE = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+const MODELO = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+const UMBRAL_DISTRACCION = 3;      // segundos seguidos sin atención para contar una distracción
+const UMBRAL_OJOS_CERRADOS = 2;    // segundos con ojos cerrados para considerar desatención
+
+// (el material fijo de la Ley 24.449 que estaba acá ahora vive en el panel, curso «cursomanejo»)
+
+// ----------------------------------------------------------------- utilidades
+const $ = (id) => document.getElementById(id);
+const mostrar = (id) => { document.querySelectorAll("main > section").forEach((s) => s.classList.add("oculto")); $(id).classList.remove("oculto"); window.scrollTo(0, 0); };
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+async function post(ruta, cuerpo) {
+  const r = await fetch(API + ruta, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) });
+  let datos = {}; try { datos = await r.json(); } catch {}
+  return { ok: r.ok && datos.ok !== false, datos };
+}
+const estado = { registro: null, sesion: null, preguntas: [], modo: "camara", inicioEstudio: 0 };
+// Si el chofer entró en la portada con DNI + nacimiento, sus datos salen del padrón (no los vuelve a escribir).
+const leer = (k) => { try { return sessionStorage.getItem(k); } catch { return null; } };
+const TOKEN = leer("chofer_token");
+
+// ----------------------------------------------------------------- 0. cargar el curso
+(async () => {
+  try {
+    const r = await fetch("/panel/publico/curso/" + encodeURIComponent(SLUG));
+    if (!r.ok) throw new Error(r.status);
+    CURSO = await r.json();
+  } catch {
+    $("paso-registro").innerHTML = `<h1>Curso no disponible</h1><p class="suave">Este curso no existe o no está habilitado.</p>
+      <p><a href="/">Ver las capacitaciones disponibles</a></p>`;
+    return;
+  }
+  document.title = CURSO.titulo + " · Capacitación";
+  $("titulo-curso").textContent = CURSO.titulo;
+  $("desc-curso").textContent = CURSO.descripcion || "";
+  if (!CURSO.mostrar_camara) $("barra-camara").classList.add("invisible");   // ni la imagen ni el indicador
+  if (!CURSO.examen) $("btn-estudio").textContent = "Terminé la capacitación";
+  if (TOKEN) {
+    document.querySelectorAll("#paso-registro label, #paso-registro input").forEach((x) => x.classList.add("oculto"));
+    $("desc-curso").insertAdjacentHTML("afterend", `<p>Hola <b>${esc(leer("chofer_nombre") || "")}</b>, ya ingresaste con tu DNI.</p>`);
+    $("btn-registro").textContent = "Empezar";
+  } else if (CURSO.acceso === "asignados") {
+    $("paso-registro").innerHTML = `<p class="suave" style="margin:0 0 6px"><a href="/">← Capacitaciones</a></p><h1>${esc(CURSO.titulo)}</h1>
+      <p>Esta capacitación es solo para choferes asignados.</p><p><a href="/">Ingresá con tu DNI y tu fecha de nacimiento</a> para hacerla.</p>`;
+  }
+  $("txt-aprobacion").textContent = `Elegí una opción en cada pregunta. Se aprueba con ${CURSO.aprobacion || 70}%.`;
+})();
+
+// ----------------------------------------------------------------- 1. registro
+$("btn-registro").onclick = () => {
+  if (!CURSO) return;
+  if (TOKEN) { estado.registro = { nombre: leer("chofer_nombre") || "" }; return elegirModo(); }
+  const r = { nombre: $("nombre").value.trim(), dni: $("dni").value.replace(/\D/g, ""),
+              celular: $("celular").value.trim(), empresa: $("empresa").value.trim(),
+              fecha_nacimiento: $("nacimiento").value };
+  const faltan = [];
+  if (r.nombre.length < 3) faltan.push("nombre y apellido");
+  if (!/^\d{7,8}$/.test(r.dni)) faltan.push("DNI (7 u 8 números)");
+  if (r.celular.replace(/\D/g, "").length < 8) faltan.push("celular");
+  const edad = (Date.now() - Date.parse(r.fecha_nacimiento)) / 31557600000;
+  if (!(edad >= 16 && edad <= 90)) faltan.push("fecha de nacimiento");
+  $("err-registro").textContent = faltan.length ? "Revisá: " + faltan.join(", ") : "";
+  if (faltan.length) return;
+  estado.registro = r;
+  elegirModo();
+};
+function elegirModo() {
+  if (CURSO.atencion === "sin") return empezarSinCamara();
+  if (CURSO.atencion === "camara") { $("alt-sin").classList.add("oculto"); return mostrar("paso-consent"); }
+  mostrar("paso-modo");
+}
+$("btn-modo-camara").onclick = () => { $("alt-sin").classList.remove("oculto"); mostrar("paso-consent"); };
+$("btn-modo-sin").onclick = () => empezarSinCamara();
+$("link-sin").onclick = (e) => { e.preventDefault(); empezarSinCamara(); };
+
+async function empezarSinCamara() {
+  estado.modo = "sin";
+  const { ok, datos } = await post("/inicio", { ...estado.registro, token: TOKEN, curso: SLUG, modo: "sin", examen: CURSO.examen,
+                                                dispositivo: navigator.userAgent.slice(0, 120) });
+  if (!ok) { const err = $("err-modo"); err.textContent = "No se pudo iniciar: " + ((datos.errores || []).join(", ") || "probá de nuevo");
+             mostrar("paso-modo"); return; }
+  estado.sesion = datos.sesion; estado.preguntas = datos.preguntas;
+  $("barra-camara").classList.add("oculto");
+  armarEstudio(); mostrar("paso-estudio");
+}
+
+// ----------------------------------------------------------------- 2. consentimiento + cámara
+$("acepto").onchange = () => { $("btn-consent").disabled = !$("acepto").checked; };
+$("btn-consent").onclick = async () => {
+  $("btn-consent").disabled = true; $("err-consent").textContent = "";
+  estado.modo = "camara";
+  const { ok, datos } = await post("/inicio", { ...estado.registro, token: TOKEN, consentimiento: true, curso: SLUG, modo: "camara", examen: CURSO.examen,
+                                                dispositivo: navigator.userAgent.slice(0, 120) });
+  if (!ok) { $("err-consent").textContent = "No se pudo iniciar: " + ((datos.errores || []).join(", ") || "probá de nuevo"); $("btn-consent").disabled = false; return; }
+  estado.sesion = datos.sesion; estado.preguntas = datos.preguntas;
+  try {
+    await iniciarCamara();
+  } catch (e) {
+    $("err-consent").textContent = "No se pudo usar la cámara (" + (e.name || e.message) + "). Revisá los permisos del navegador o usá la versión sin control de atención.";
+    $("btn-consent").disabled = false; return;
+  }
+  armarEstudio(); mostrar("paso-estudio");
+};
+
+// ----------------------------------------------------------------- 3. atención (todo local)
+const at = { total: 0, atento: 0, sinAtencion: 0, racha: 0, distracciones: 0, salidas: 0, ojos: 0,
+             activo: false, ultimo: 0, stream: null, detector: null };
+
+async function iniciarCamara() {
+  at.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 320 }, height: { ideal: 240 } }, audio: false });
+  const v = $("preview"); v.srcObject = at.stream; await v.play();
+  const { FaceLandmarker, FilesetResolver } = await import(MEDIAPIPE + "/vision_bundle.mjs");
+  const fileset = await FilesetResolver.forVisionTasks(MEDIAPIPE + "/wasm");
+  at.detector = await FaceLandmarker.createFromOptions(fileset, {
+    baseOptions: { modelAssetPath: MODELO, delegate: "GPU" }, runningMode: "VIDEO", numFaces: 1,
+    outputFaceBlendshapes: true });
+  at.activo = true; at.ultimo = performance.now(); requestAnimationFrame(ciclo);
+}
+
+function mirando(res) {
+  const lm = res.faceLandmarks && res.faceLandmarks[0];
+  if (!lm) return [false, "No se ve tu cara"];
+  const nariz = lm[1], ojoI = lm[33], ojoD = lm[263], boca = lm[13];
+  const ancho = ojoD.x - ojoI.x;
+  const giro = ancho ? (nariz.x - ojoI.x) / ancho : 0.5;             // ~0.5 de frente
+  const ojosY = (ojoI.y + ojoD.y) / 2, alto = boca.y - ojosY;
+  const inclin = alto ? (nariz.y - ojosY) / alto : 0.6;              // ~0.6 de frente
+  if (Math.abs(ancho) < 0.04) return [false, "Acercá el celular"];
+  if (giro < 0.25 || giro > 0.75) return [false, "Mirá la pantalla"];
+  if (inclin < 0.2 || inclin > 1.15) return [false, "Mirá la pantalla"];
+  const bs = res.faceBlendshapes && res.faceBlendshapes[0];
+  if (bs) {
+    const p = Object.fromEntries(bs.categories.map((c) => [c.categoryName, c.score]));
+    if ((p.eyeBlinkLeft || 0) > 0.6 && (p.eyeBlinkRight || 0) > 0.6) return [null, "Ojos cerrados"];
+  }
+  return [true, "Atención OK"];
+}
+
+function ciclo(t) {
+  if (!at.activo) return;
+  const dt = Math.min((t - at.ultimo) / 1000, 1); at.ultimo = t;
+  if (dt > 0.2) {   // ~5 muestras por segundo alcanza y ahorra batería
+    let ok = false, txt = "Fuera de la página";
+    if (!document.hidden && at.detector) {
+      const res = at.detector.detectForVideo($("preview"), t);
+      let r = mirando(res); txt = r[1];
+      if (r[0] === null) { at.ojos += dt; ok = at.ojos < UMBRAL_OJOS_CERRADOS; } else { at.ojos = 0; ok = r[0]; }
+    }
+    at.total += dt;
+    if (ok) { at.atento += dt; at.racha = 0; }
+    else { at.sinAtencion += dt; const antes = at.racha; at.racha += dt;
+           if (antes < UMBRAL_DISTRACCION && at.racha >= UMBRAL_DISTRACCION) at.distracciones++; }
+    $("estado").textContent = ok ? "👀 " + txt : "⚠️ " + txt;
+    $("estado").className = "estado " + (ok ? "ok" : "mal");
+    $("barra-atencion").style.width = porcentaje() + "%";
+    $("estado-detalle").textContent = `Atención ${porcentaje()}% · distracciones ${at.distracciones} · salidas ${at.salidas}`;
+  } else { at.ultimo -= dt * 1000; }
+  requestAnimationFrame(ciclo);
+}
+const porcentaje = () => at.total ? Math.round((at.atento / at.total) * 100) : 0;
+document.addEventListener("visibilitychange", () => { if (document.hidden && at.activo) at.salidas++; });
+// Con la página oculta el navegador frena requestAnimationFrame: ese tiempo cuenta como sin atención.
+let ocultoDesde = 0;
+document.addEventListener("visibilitychange", () => {
+  if (!at.activo) return;
+  if (document.hidden) ocultoDesde = performance.now();
+  else if (ocultoDesde) { const s = (performance.now() - ocultoDesde) / 1000; at.total += s; at.sinAtencion += s;
+                          if (s >= UMBRAL_DISTRACCION) at.distracciones++; ocultoDesde = 0; at.ultimo = performance.now(); }
+});
+function apagarCamara() {
+  at.activo = false;
+  if (at.stream) at.stream.getTracks().forEach((tr) => tr.stop());
+  if (at.detector) at.detector.close();
+}
+
+// ----------------------------------------------------------------- estudio
+function armarEstudio() {
+  estado.inicioEstudio = Date.now();
+  $("videos").innerHTML = CURSO.videos.map((v) => {
+    const t = `<h3>${esc(v.titulo)}</h3>`;
+    if (v.tipo === "youtube") return t + `<div class="video"><iframe src="https://www.youtube-nocookie.com/embed/${esc(v.youtube)}" allow="encrypted-media; picture-in-picture" allowfullscreen></iframe></div>`;
+    if (v.tipo === "video") return t + `<div class="video"><video src="${esc(v.url)}" controls playsinline preload="metadata"></video></div>`;
+    if (v.tipo === "imagen") return t + `<div class="recurso"><img src="${esc(v.url)}" alt="${esc(v.titulo)}" loading="lazy"></div>`;
+    return `<div class="recurso">📄 <a href="${esc(v.url)}" target="_blank" rel="noopener">${esc(v.titulo)}</a></div>`;
+  }).join("");
+  $("material").innerHTML = CURSO.material.map((s) => `<h3>${esc(s.titulo)}</h3><ul>${s.items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>`).join("");
+  const fin = Date.now() + (CURSO.min_segundos || 0) * 1000;
+  const tic = setInterval(() => {
+    const falta = Math.ceil((fin - Date.now()) / 1000);
+    if (falta > 0) { $("tiempo-min").textContent = `Podés pasar a la evaluación en ${falta} s.`; }
+    else { $("tiempo-min").textContent = ""; $("btn-estudio").disabled = false; clearInterval(tic); }
+  }, 500);
+}
+$("btn-estudio").onclick = () => {
+  if (!CURSO.examen) $("btn-estudio").disabled = true;
+  estado.atencion = estado.modo === "camara"
+    ? { pct: porcentaje(), distracciones: at.distracciones, salidas: at.salidas,
+        segundos: Math.round(at.total), segundosSinAtencion: Math.round(at.sinAtencion) }
+    : { segundos: Math.round((Date.now() - estado.inicioEstudio) / 1000) };
+  apagarCamara();
+  if (!CURSO.examen) return enviarFin({});
+  armarExamen(); mostrar("paso-examen");
+};
+
+// ----------------------------------------------------------------- 4. examen
+function armarExamen() {
+  $("form-examen").innerHTML = estado.preguntas.map((p, i) => `<div class="pregunta"><p>${i + 1}. ${esc(p.pregunta)}</p>` +
+    p.opciones.map((o) => `<label class="opcion"><input type="radio" name="p${p.n}" value="${esc(o)}"> <span>${esc(o)}</span></label>`).join("") +
+    `</div>`).join("");
+}
+$("btn-examen").onclick = async () => {
+  const resp = {}; let faltan = 0;
+  for (const p of estado.preguntas) { const sel = document.querySelector(`input[name="p${p.n}"]:checked`);
+                                      if (sel) resp[String(p.n)] = sel.value; else faltan++; }
+  if (faltan) { $("err-examen").textContent = `Te falta responder ${faltan} pregunta(s).`; return; }
+  $("btn-examen").disabled = true; $("err-examen").textContent = "";
+  await enviarFin(resp);
+};
+async function enviarFin(resp) {
+  const { ok, datos } = await post("/fin", { sesion: estado.sesion, respuestas: resp, atencion: estado.atencion,
+                                             dispositivo: navigator.userAgent.slice(0, 120) });
+  if (!ok) {
+    if (!CURSO.examen) { $("btn-estudio").disabled = false; $("tiempo-min").textContent = "No se pudo registrar. Probá de nuevo."; return; }
+    $("err-examen").textContent = datos.error || "No se pudo enviar. Probá de nuevo."; $("btn-examen").disabled = false; return;
+  }
+  mostrarResultado(datos);
+}
+
+// ----------------------------------------------------------------- 5. resultado
+function mostrarResultado(r) {
+  const a = estado.atencion;
+  $("paso-resultado").innerHTML =
+    (CURSO.examen
+      ? `<h2 class="${r.aprobado ? "res-ok" : "res-mal"}">${r.aprobado ? "✅ ¡Aprobaste!" : "❌ No aprobaste"}</h2>` +
+        `<p style="font-size:18px">${esc(estado.registro.nombre)}: <b>${r.correctas} de ${r.total}</b> correctas (${r.puntaje}%). Se aprueba con ${r.aprobacion}%.</p>`
+      : `<h2 class="res-ok">✅ ¡Completaste la capacitación!</h2><p style="font-size:18px">Gracias, ${esc(estado.registro.nombre)}.</p>`) +
+    (estado.modo === "camara"
+      ? `<h3>Tu atención durante el estudio</h3><div class="metricas">` +
+        `<div><b>${a.pct}%</b>atención</div><div><b>${a.distracciones}</b>distracciones</div>` +
+        `<div><b>${a.salidas}</b>salidas de la página</div><div><b>${Math.round(a.segundos / 60 * 10) / 10} min</b>de estudio</div></div>`
+      : `<div class="metricas"><div><b>${Math.round(a.segundos / 60 * 10) / 10} min</b>de estudio</div></div>`) +
+    (r.fallas.length ? `<h3>Repasá estas respuestas</h3>` + r.fallas.map((f) => `<div class="falla"><b>${esc(f.pregunta)}</b>` +
+      `<div class="res-mal">Tu respuesta: ${esc(f.respuesta)}</div><div class="res-ok">Correcta: ${esc(f.correcta)}</div></div>`).join("") : "") +
+    `<p class="suave">Tu resultado quedó registrado.${estado.modo === "camara" ? " La cámara ya está apagada." : ""}</p>` +
+    `<p><a href="/">← Volver a las capacitaciones</a></p>`;
+  mostrar("paso-resultado");
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% block titulo %}Choferes · Panel de capacitación{% endblock %}
+{% block contenido %}
+{% set coord = u.rol == 'coordinador' %}
+{% set gestion = 'gestion' in u.puede %}
+{% set carga = 'choferes' in u.puede %}
+<div class="tarjeta">
+  <h1>Choferes {% if coord %}<span class="suave">· {{ (transportes|selectattr('id', 'equalto', u.transporte_id)|first or {}).nombre }}</span>{% endif %}</h1>
+  {% if msg %}<p class="aviso">✔ {{ msg }}</p>{% endif %}
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form method="get" class="fila-form">
+    {% if not coord %}
+    <label>Transporte<select name="transporte" onchange="this.form.submit()"><option value="">Todos</option>
+      {% for t in transportes %}<option value="{{ t.id }}" {{ 'selected' if filtro_t == t.id }}>{{ t.nombre }} ({{ t.choferes }})</option>{% endfor %}
+    </select></label>
+    {% endif %}
+    <label>Buscar<input name="buscar" value="{{ buscar }}" placeholder="Nombre o DNI"></label>
+    <label class="switch"><input type="checkbox" name="inactivos" value="1" {{ 'checked' if inactivos }} onchange="this.form.submit()"> Ver dados de baja</label>
+    <button>Buscar</button>
+  </form>
+</div>
+
+{% if gestion %}
+<div class="tarjeta" id="asignar-box">
+  <h2>Asignar un curso a los choferes marcados</h2>
+  <div class="fila-form">
+    <label>Curso<select id="a-curso">{% for c in cursos %}<option value="{{ c.slug }}">{{ c.titulo }}</option>{% endfor %}</select></label>
+    <label>Fecha límite (opcional)<input type="date" id="a-limite"></label>
+    <button class="primario" type="button" id="b-asignar">Asignar a <span id="n-marcados">0</span> marcados</button>
+  </div>
+  <p class="suave">Para asignar a <b>todo un transporte</b> (y que los choferes nuevos lo reciban solos) usá <a href="{{ P }}/cumplimiento">Cumplimiento</a>.</p>
+  <p id="a-estado" class="suave"></p>
+</div>
+{% endif %}
+
+<div class="tarjeta">
+  <div class="titulo-fila"><h2>{{ choferes|length }} chofer(es)</h2></div>
+  <div class="tabla-scroll"><table>
+    <thead><tr>{% if gestion %}<th><input type="checkbox" id="todos" title="Marcar todos"></th>{% endif %}
+      <th>Chofer</th><th>DNI</th><th>Celular</th><th>Nacimiento</th>{% if not coord %}<th>Transporte</th>{% endif %}<th></th></tr></thead>
+    <tbody>
+    {% for ch in choferes %}
+      <tr class="{{ '' if ch.activo else 'apagado' }}">
+        {% if gestion %}<td><input type="checkbox" class="marca" value="{{ ch.dni }}"></td>{% endif %}
+        <td>{{ ch.nombre }}</td><td>{{ ch.dni }}</td><td>{{ ch.celular or '' }}</td>
+        <td>{{ ch.nacimiento.split('-')|reverse|join('/') if ch.nacimiento else '—' }}</td>
+        {% if not coord %}<td>{{ ch.transporte or 'Sin transporte' }}</td>{% endif %}
+        <td class="acciones">{% if carga %}
+          <button class="chico" type="button" onclick='editar({{ ch|tojson }})'>✏️</button>
+          <form method="post" style="display:inline"><input type="hidden" name="dni" value="{{ ch.dni }}">
+            {% if ch.activo %}<button class="chico" name="accion" value="desactivar" onclick="return confirm('¿Dar de baja a {{ ch.nombre }}? Deja de figurar en el cumplimiento (el historial queda).')">Baja</button>
+            {% else %}<button class="chico" name="accion" value="activar">Reactivar</button>{% endif %}
+          </form>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="suave">No hay choferes{{ ' con ese filtro' if buscar or filtro_t }}. Cargalos abajo, de a uno o con una lista.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+
+{% if carga %}
+<div class="tarjeta" id="form-chofer">
+  <h2 id="t-form">Agregar chofer</h2>
+  <form method="post" class="fila-form">
+    <input type="hidden" name="accion" value="guardar">
+    <label>DNI<input name="dni" id="c-dni" inputmode="numeric" required></label>
+    <label>Apellido y nombre<input name="nombre" id="c-nombre" required></label>
+    <label>Celular<input name="celular" id="c-celular" inputmode="tel"></label>
+    <label>Fecha de nacimiento<input name="nacimiento" id="c-nac" type="date"></label>
+    {% if not coord %}<label>Transporte<select name="transporte_id" id="c-transporte"><option value="">—</option>
+      {% for t in transportes if t.activo %}<option value="{{ t.id }}">{{ t.nombre }}</option>{% endfor %}</select></label>{% endif %}
+    <button class="primario">Guardar</button>
+  </form>
+  <p class="suave">El chofer entra a <a href="/" target="_blank">la página de capacitación</a> con su DNI y su fecha de nacimiento.</p>
+</div>
+
+<div class="tarjeta">
+  <h2>Importar una lista (GCG, JDE, Excel, CSV)</h2>
+  <p class="suave">Subí el archivo exportado (.xlsx, .xls, .csv, .txt) o copiá las filas desde Excel <b>con la fila de títulos</b> y pegalas abajo.
+    Se reconocen columnas como <i>DNI / Documento / CUIL</i>, <i>Apellido y nombre</i> (o <i>Apellido</i> + <i>Nombre</i>),
+    <i>Celular / Teléfono</i>, <i>Fecha de nacimiento</i>{% if not coord %} y <i>Transporte / Empresa</i>{% endif %}.
+    Los que ya existen se actualizan (no se duplican).</p>
+  <div class="fila-form">
+    <label>Archivo<input type="file" id="i-archivo" accept=".xlsx,.xls,.csv,.txt,.tsv"></label>
+    {% if not coord %}<label>Transporte para los que no traen columna de transporte<select id="i-transporte"><option value="">—</option>
+      {% for t in transportes if t.activo %}<option value="{{ t.id }}">{{ t.nombre }}</option>{% endfor %}</select></label>{% endif %}
+  </div>
+  <textarea id="i-texto" rows="8" class="mono" placeholder="DNI	Apellido y nombre	Celular	Fecha de nacimiento	Transporte"></textarea>
+  <div class="fila-form" style="margin-top:10px">
+    <button type="button" id="b-revisar">🔍 Revisar</button>
+    <button type="button" class="primario" id="b-importar" disabled>⬆ Importar</button>
+  </div>
+  <div id="i-resultado"></div>
+</div>
+{% endif %}
+
+{% if gestion %}
+<div class="tarjeta">
+  <h2>Transportes</h2>
+  <div class="tabla-scroll"><table>
+    <thead><tr><th>Nombre</th><th>Choferes activos</th><th>Estado</th><th></th></tr></thead>
+    <tbody>{% for t in transportes %}
+      <tr class="{{ '' if t.activo else 'apagado' }}">
+        <td><input form="ft{{ t.id }}" name="nombre" value="{{ t.nombre }}" maxlength="80"></td><td>{{ t.choferes }}</td>
+        <td><select form="ft{{ t.id }}" name="activo"><option value="1" {{ 'selected' if t.activo }}>Activo</option><option value="0" {{ 'selected' if not t.activo }}>Inactivo</option></select></td>
+        <td><button form="ft{{ t.id }}" class="chico">Guardar</button></td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% for t in transportes %}<form method="post" id="ft{{ t.id }}"><input type="hidden" name="accion" value="transporte_editar"><input type="hidden" name="id" value="{{ t.id }}"></form>{% endfor %}
+  <form method="post" class="fila-form" style="margin-top:10px">
+    <input type="hidden" name="accion" value="transporte_crear">
+    <label>Nuevo transporte<input name="nombre" required maxlength="80"></label><button class="primario">Agregar</button>
+  </form>
+</div>
+{% endif %}
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+const P = "{{ P }}";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+async function api(ruta, cuerpo) {
+  const r = await fetch(P + ruta, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || d.ok === false) throw new Error(d.error || d.detail || "error " + r.status);
+  return d;
+}
+function editar(ch) {
+  $("t-form").textContent = "Editar chofer";
+  $("c-dni").value = ch.dni; $("c-nombre").value = ch.nombre; $("c-celular").value = ch.celular || "";
+  $("c-nac").value = ch.nacimiento || ""; if ($("c-transporte")) $("c-transporte").value = ch.transporte_id || "";
+  $("form-chofer").scrollIntoView({ behavior: "smooth" });
+}
+// --- marcar y asignar
+const marcas = () => [...document.querySelectorAll(".marca:checked")].map((x) => x.value);
+const contar = () => { if ($("n-marcados")) $("n-marcados").textContent = marcas().length; };
+document.querySelectorAll(".marca").forEach((x) => (x.onchange = contar));
+if ($("todos")) $("todos").onchange = () => { document.querySelectorAll(".marca").forEach((x) => (x.checked = $("todos").checked)); contar(); };
+if ($("b-asignar")) $("b-asignar").onclick = async () => {
+  const dnis = marcas();
+  if (!dnis.length) { $("a-estado").textContent = "Marcá al menos un chofer."; return; }
+  try {
+    const d = await api("/api/asignaciones", { accion: "asignar", curso: $("a-curso").value, dnis, limite: $("a-limite").value });
+    $("a-estado").textContent = "✔ " + d.mensaje;
+  } catch (e) { $("a-estado").textContent = "✖ " + e.message; }
+};
+// --- importar
+if ($("i-archivo")) $("i-archivo").onchange = async () => {
+  const f = $("i-archivo").files[0]; if (!f) return;
+  try {
+    if (/\.(xlsx|xls)$/i.test(f.name)) {
+      const wb = XLSX.read(await f.arrayBuffer(), { cellDates: false });
+      const hoja = wb.Sheets[wb.SheetNames[0]];
+      // fechas como texto DD/MM/AAAA; el resto tal cual
+      $("i-texto").value = XLSX.utils.sheet_to_csv(hoja, { FS: "\t", blankrows: false, dateNF: "dd/mm/yyyy", rawNumbers: true });
+    } else {
+      let t = await f.text();
+      if (t.includes("�")) t = new TextDecoder("windows-1252").decode(await f.arrayBuffer());   // exportes viejos en ANSI
+      $("i-texto").value = t;
+    }
+    $("b-revisar").click();
+  } catch (e) { $("i-resultado").innerHTML = `<p class="error">No pude leer el archivo: ${esc(e.message)}</p>`; }
+};
+async function importar(simular) {
+  $("i-resultado").innerHTML = "<p class='suave'>Procesando…</p>";
+  try {
+    const d = await api("/api/importar", { texto: $("i-texto").value, transporte_id: $("i-transporte") ? $("i-transporte").value : "", simular });
+    const cols = Object.entries(d.columnas).map(([k, v]) => `${k} ← «${esc(v)}»`).join(", ");
+    $("i-resultado").innerHTML =
+      `<p class="aviso">${simular ? "Revisión (todavía no se guardó nada)" : "✔ Importado"}: <b>${d.nuevos}</b> nuevos, <b>${d.actualizados}</b> actualizados` +
+      `${d.errores.length ? `, <b>${d.errores.length}</b> con problemas` : ""}.<br><span class="suave">Columnas: ${cols}</span>` +
+      `${d.transportes_nuevos.length ? `<br>Transportes nuevos que se van a crear: <b>${d.transportes_nuevos.map(esc).join(", ")}</b>` : ""}</p>` +
+      (d.vista.length ? `<div class="tabla-scroll"><table><tr><th>DNI</th><th>Nombre</th><th>Nacimiento</th><th>Celular</th><th>Transporte</th><th></th></tr>` +
+        d.vista.map((v) => `<tr><td>${esc(v.dni)}</td><td>${esc(v.nombre)}</td><td>${esc(v.nacimiento)}</td><td>${esc(v.celular)}</td><td>${esc(v.transporte)}</td><td>${v.tipo}</td></tr>`).join("") +
+        `</table></div><p class="suave">(primeras filas)</p>` : "") +
+      (d.errores.length ? `<details open><summary>Problemas</summary><ul>${d.errores.slice(0, 100).map((e) => `<li>${esc(e)}</li>`).join("")}</ul></details>` : "");
+    $("b-importar").disabled = !simular || !(d.nuevos + d.actualizados);
+    if (!simular) setTimeout(() => location.reload(), 2500);
+  } catch (e) { $("i-resultado").innerHTML = `<p class="error">${esc(e.message)}</p>`; $("b-importar").disabled = true; }
+}
+if ($("b-revisar")) { $("b-revisar").onclick = () => importar(true); $("b-importar").onclick = () => importar(false);
+                      $("i-texto").oninput = () => ($("b-importar").disabled = true); }
+</script>
+{% endblock %}

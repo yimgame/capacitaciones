@@ -1,0 +1,65 @@
+# Capacitaciones
+
+Plataforma simple para capacitar choferes de transporte: cursos con material, videos y evaluación, control de
+atención opcional con la cámara del celular, padrón de transportes y choferes, asignaciones con vencimiento y un
+panel para medir cómo vienen.
+
+Todo es **HTML + CSS + JavaScript** en el navegador y un panel en **Python (FastAPI)** con **una sola base SQLite**.
+Sin servicios externos.
+
+## Qué hace
+
+**Para el chofer** (`/`)
+- Entra con **DNI y fecha de nacimiento** y ve *sus* capacitaciones: pendientes, aprobadas, por vencer, vencidas.
+- Cada curso (`/<curso>`): material, videos/PDF/imágenes, tiempo mínimo de estudio y evaluación con preguntas al azar.
+- **Control de atención** opcional: la cámara frontal estima si está mirando la pantalla.
+  *Todo se procesa en el celular* (MediaPipe): no se graba ni se envía imagen; al servidor solo llegan números
+  (porcentaje de atención, distracciones, salidas de la página). Requiere consentimiento.
+
+**Para los capacitadores** (`/panel/`)
+- **Cursos**: material, videos (subida por partes, hasta 4 GB), YouTube, modo de atención, tiempo mínimo,
+  **preguntas y respuestas propias** (o el banco de la Ley Nacional de Tránsito 24.449), cantidad de preguntas,
+  % para aprobar, **acceso abierto o solo asignados**, **vigencia** (anual, cada N meses o sin vencimiento).
+- **Choferes**: alta de a uno o **importación de archivos** (.xlsx, .xls, .csv, .txt) o pegado desde Excel,
+  con revisión antes de guardar.
+- **Cumplimiento**: semáforo por transporte, estado por chofer y curso, **asignar / recursar / cambiar fecha
+  límite** a choferes marcados o a todo un transporte (también a los que se carguen después), recordatorio por
+  WhatsApp, exportar a Excel.
+- **Panel de resultados**: aprobación por transporte, edad, atención vs. nota, preguntas que más fallan, alertas.
+
+**Roles**: administrador · capacitador (cursos, choferes, asignaciones) · evaluador (solo mira) ·
+coordinador de transporte (solo ve y carga los choferes de su transporte).
+
+## Instalar
+
+```sh
+cp .env.example .env        # poné una contraseña en PANEL_ADMIN_PASSWORD
+docker compose up -d --build
+```
+
+Abrí `http://localhost:8097/panel/`, entrá con `admin` y la contraseña del `.env` (te pide cambiarla).
+La base (`panel.db`) **se crea sola** la primera vez, con dos cursos de ejemplo deshabilitados.
+
+Para publicarlo en internet poné adelante un proxy con HTTPS (la cámara del navegador solo funciona con HTTPS).
+
+## Estructura
+
+```
+web/            index.html (portada del chofer) · curso.html (página de cada curso)
+nginx.conf      sirve web/, /recursos/ y hace de proxy a /panel/
+panel/          Dockerfile + app/ (FastAPI)
+  app/main.py       rutas
+  app/cursos.py     cursos, material, videos, preguntas
+  app/examen.py     arma y corrige la evaluación, guarda resultados
+  app/padron.py     transportes, choferes, asignaciones, vigencia, ingreso del chofer
+  app/datos.py      estadísticas del panel
+  app/auth.py       usuarios, roles, sesiones (Argon2id)
+  app/respaldo.py   backup diario de la base (/data/respaldos, 30 días)
+recursos/       videos y archivos subidos (no va al repo)
+```
+
+## Datos y privacidad
+
+- Nada de producción va al repo: `.env`, la base y `recursos/` están en `.gitignore`.
+- Las respuestas correctas nunca llegan al navegador: el examen se arma y se corrige en el servidor.
+- Del control de atención solo se guardan números, nunca imágenes ni datos de la cara.

@@ -1,0 +1,16 @@
+# Nada de producción en el repo: la base se crea sola al arrancar el panel.
+.env
+*.db
+*.db-*
+*.db.bak*
+*.sqlite*
+respaldos/
+# Videos y archivos que suben los capacitadores
+recursos/
+# Copias de seguridad y compose del servidor (rutas internas)
+*.bak*
+*.tgz
+docker-compose.portainer*.yml
+__pycache__/
+*.pyc
+.DS_Store

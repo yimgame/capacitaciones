@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block titulo %}{{ c.titulo }} · Cursos{% endblock %}
+{% block contenido %}
+<p><a href="{{ P }}/cursos">← Cursos</a> · <a href="/{{ c.slug }}" target="_blank">Ver la página del curso ↗</a></p>
+{% if msg %}<p class="aviso">✔ {{ msg }}</p>{% endif %}
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+<form method="post" class="tarjeta editor" id="f-curso">
+  <h1>{{ c.titulo }} <span class="suave">/{{ c.slug }}</span></h1>
+  <div class="dos-col">
+    <label>Título<input name="titulo" value="{{ c.titulo }}" maxlength="120" required></label>
+    <label>Orden en la lista<input name="orden" type="number" value="{{ c.orden }}"></label>
+  </div>
+  <label>Descripción (la ven los choferes arriba de todo)<textarea name="descripcion" rows="2" maxlength="1000">{{ c.descripcion }}</textarea></label>
+
+  <h2>Cómo se hace</h2>
+  <div class="dos-col">
+    <label>Control de atención<select name="atencion">
+      {% for k, v in atencion.items() %}<option value="{{ k }}" {{ 'selected' if c.atencion == k }}>{{ v }}</option>{% endfor %}
+    </select></label>
+    <label>Tiempo mínimo de estudio antes del examen (segundos)<input name="min_segundos" type="number" min="0" max="7200" value="{{ c.min_segundos }}"></label>
+  </div>
+  <div class="dos-col">
+    <label>Quién lo puede hacer<select name="acceso">
+      {% for k, v in acceso.items() %}<option value="{{ k }}" {{ 'selected' if (c.acceso or 'abierto') == k }}>{{ v }}</option>{% endfor %}
+    </select></label>
+    <label>Vigencia (cuándo hay que repetirlo)<select name="vigencia_meses">
+      {% for k, v in vigencia.items() %}<option value="{{ k }}" {{ 'selected' if (c.vigencia_meses or 0) == k }}>{{ v }}</option>{% endfor %}
+    </select></label>
+  </div>
+  <label class="switch"><input type="checkbox" name="habilitado" value="1" {{ 'checked' if c.habilitado }}> Curso habilitado (visible para los choferes)</label>
+  <label class="switch"><input type="checkbox" name="mostrar_camara" value="1" {{ 'checked' if c.mostrar_camara }}> Mostrar al chofer la cámara y el indicador de atención (destildado: no ve nada, pero se mide igual)</label>
+  <label class="switch"><input type="checkbox" name="examen" value="1" {{ 'checked' if c.examen }}> Evaluación al final
+    ({{ c.preguntas_por_examen or 10 }} preguntas al azar de {{ ((c.preguntas|length) ~ ' propias') if c.preguntas else 'la Ley 24.449' }}, se aprueba con {{ c.aprobacion or 70 }}%)</label>
+  <p><a class="boton" href="{{ P }}/cursos/{{ c.slug }}/preguntas">📝 Editar preguntas y respuestas</a></p>
+
+  <h2>Material de estudio</h2>
+  <p class="suave">Una línea que empieza con <code>#</code> es un título; cada línea de abajo es un punto de la lista.</p>
+  <textarea name="material" rows="16" class="mono">{{ material_texto }}</textarea>
+
+  <h2>Videos y archivos <span class="suave">({{ c.videos|length }})</span></h2>
+  {% if c.videos %}
+  <div class="tabla-scroll"><table>
+    <thead><tr><th>Orden</th><th>Título</th><th>Tipo</th><th>Archivo</th><th></th></tr></thead>
+    <tbody>{% for v in c.videos %}
+      <tr><td><input name="v_orden_{{ v.id }}" type="number" value="{{ v.orden }}" style="width:70px"></td>
+        <td><input name="v_titulo_{{ v.id }}" value="{{ v.titulo }}" maxlength="120"></td>
+        <td>{{ {'video':'🎬 Video','youtube':'▶️ YouTube','documento':'📄 PDF','imagen':'🖼️ Imagen'}[v.tipo] }}</td>
+        <td class="suave">{% if v.tipo == 'youtube' %}<a href="https://youtu.be/{{ v.youtube }}" target="_blank">{{ v.youtube }}</a>
+            {% else %}<a href="/recursos/{{ v.archivo }}" target="_blank">{{ v.archivo.split('/')[-1] }}</a>{% endif %}</td>
+        <td><button class="chico" form="f-quitar" name="vid" value="{{ v.id }}" onclick="return confirm('¿Quitar «{{ v.titulo }}» del curso?')">🗑 Quitar</button></td></tr>
+    {% endfor %}</tbody></table></div>
+  {% else %}<p class="suave">Todavía no tiene videos.</p>{% endif %}
+
+  <button class="primario" style="margin-top:14px">💾 Guardar cambios</button>
+</form>
+<form method="post" id="f-quitar"><input type="hidden" name="accion" value="quitar"></form>
+
+<div class="tarjeta">
+  <h2>Subir video o archivo</h2>
+  <p class="suave">mp4 o webm (también mov/m4v, pdf, jpg, png). Hasta 4 GB; se sube por partes, se puede usar desde afuera de la oficina.
+    Lo más compatible con todos los celulares es <b>mp4 (H.264)</b>.</p>
+  <div class="fila-form">
+    <label>Archivo<input type="file" id="archivo" accept="{{ extensiones }}"></label>
+    <label>Título que ve el chofer<input id="titulo-archivo" placeholder="Ej. Distracciones al volante"></label>
+    <button class="primario" id="b-subir" type="button">⬆ Subir</button>
+  </div>
+  <div class="barra-subida" hidden id="subida"><div id="subida-barra"></div></div>
+  <p class="suave" id="subida-estado"></p>
+</div>
+
+<div class="tarjeta">
+  <h2>Agregar video de YouTube</h2>
+  <form method="post" class="fila-form">
+    <input type="hidden" name="accion" value="youtube">
+    <label>Link de YouTube<input name="url" placeholder="https://www.youtube.com/watch?v=…" required></label>
+    <label>Título<input name="titulo_video" placeholder="Ej. Campaña de la ANSV"></label>
+    <button class="primario">Agregar</button>
+  </form>
+</div>
+
+<script>
+const P = "{{ P }}", SLUG = "{{ c.slug }}", PARTE = 32 * 1024 * 1024;
+const $ = (id) => document.getElementById(id);
+$("b-subir").onclick = async () => {
+  const f = $("archivo").files[0];
+  if (!f) { $("subida-estado").textContent = "Elegí un archivo."; return; }
+  $("b-subir").disabled = true; $("subida").hidden = false;
+  const titulo = $("titulo-archivo").value.trim();
+  let offset = 0;
+  try {
+    while (offset < f.size) {
+      const trozo = f.slice(offset, offset + PARTE);
+      const q = new URLSearchParams({ nombre: f.name, offset, total: f.size, titulo });
+      const r = await fetch(`${P}/api/subir/${SLUG}?${q}`, { method: "POST", body: trozo, credentials: "same-origin",
+                                                              headers: { "Content-Type": "application/octet-stream" } });
+      const texto = await r.text();
+      let d = {}; try { d = JSON.parse(texto); } catch {}
+      if (r.status === 409 && d.esperado !== undefined) { offset = d.esperado; continue; }
+      if (!r.ok || !d.ok) {
+        // detalle para diagnosticar: quién respondió (Cloudflare o el panel) y qué dijo
+        const quien = r.headers.get("server") || "?", ray = r.headers.get("cf-ray") || "";
+        const titulo = (texto.match(/<title>([^<]*)/i) || [])[1] || "";
+        throw new Error(`${d.detail || "error " + r.status} · server=${quien}${ray ? " · ray=" + ray : ""}${titulo ? " · " + titulo : ""}`);
+      }
+      offset = d.recibido;
+      const pct = Math.round(offset * 100 / f.size);
+      $("subida-barra").style.width = pct + "%";
+      $("subida-estado").textContent = `Subiendo… ${pct}% (${(offset / 1048576).toFixed(0)} de ${(f.size / 1048576).toFixed(0)} MB)`;
+      if (d.listo) { $("subida-estado").textContent = "✔ Listo. Recargando…"; location.href = `${P}/cursos/${SLUG}?msg=video`; return; }
+    }
+  } catch (e) {
+    $("subida-estado").textContent = "✖ No se pudo subir: " + e.message + ". Probá de nuevo (sigue desde donde quedó).";
+    $("b-subir").disabled = false;
+  }
+};
+</script>
+{% endblock %}

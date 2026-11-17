@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block titulo %}Cumplimiento · Panel de capacitación{% endblock %}
+{% block contenido %}
+{% set gestion = 'gestion' in u.puede %}
+{% set coord = u.rol == 'coordinador' %}
+<section class="filtros tarjeta">
+  {% if not coord %}<label>Transporte<select id="f-transporte"><option value="">Todos</option>
+    {% for t in transportes %}<option value="{{ t.id }}">{{ t.nombre }}</option>{% endfor %}</select></label>{% endif %}
+  <label>Curso<select id="f-curso"><option value="">Todos</option>
+    {% for c in cursos %}<option value="{{ c.slug }}">{{ c.titulo }}</option>{% endfor %}</select></label>
+  <label>Estado<select id="f-estado"><option value="">Todos</option><option value="falta">Les falta (pendiente, fuera de término o vencido)</option>
+    {% for k, v in estados.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label>
+  <label>Buscar<input id="f-buscar" type="search" placeholder="Nombre o DNI"></label>
+  <div class="botones"><a id="b-csv" class="boton chico" href="#">⬇ Excel (CSV)</a></div>
+</section>
+
+<section class="tarjeta">
+  <h2>Semáforo por transporte <span class="suave">— % de cursos asignados al día</span></h2>
+  <div class="tabla-scroll"><table id="t-semaforo"></table></div>
+</section>
+
+{% if gestion %}
+<section class="tarjeta">
+  <h2>Asignar o recursar</h2>
+  <div class="fila-form">
+    <label>Curso<select id="g-curso">{% for c in cursos %}<option value="{{ c.slug }}">{{ c.titulo }}{{ '' if c.habilitado else ' (deshabilitado)' }}</option>{% endfor %}</select></label>
+    <label>A quiénes<select id="g-quien"><option value="marcados">Los choferes marcados en la lista</option>
+      {% for t in transportes %}<option value="t{{ t.id }}">Todo el transporte {{ t.nombre }}</option>{% endfor %}</select></label>
+    <label>Fecha límite (opcional)<input type="date" id="g-limite"></label>
+  </div>
+  <div id="g-auto-box" class="fila-form" hidden>
+    <label class="switch"><input type="checkbox" id="g-auto" checked> Los choferes que se carguen después en este transporte también lo reciben</label>
+    <label>Plazo para los nuevos (días)<input type="number" id="g-plazo" min="1" max="365" placeholder="ej. 30" style="max-width:120px"></label>
+  </div>
+  <div class="fila-form" style="margin-top:8px">
+    <button class="primario" type="button" data-accion="asignar">➕ Asignar</button>
+    <button type="button" data-accion="recursar">🔁 Que lo vuelvan a hacer (recursar)</button>
+    <button type="button" data-accion="limite">📅 Cambiar fecha límite</button>
+    <button type="button" data-accion="quitar">✖ Quitar asignación</button>
+  </div>
+  <p class="suave">Recursar deja el curso pendiente de nuevo: lo aprobado antes no cuenta (queda en el historial).</p>
+  <p id="g-estado"></p>
+  <div id="reglas"></div>
+</section>
+{% endif %}
+
+<section class="tarjeta">
+  <div class="titulo-fila"><h2 id="t-titulo">Choferes</h2></div>
+  <div class="tabla-scroll"><table id="t-filas"></table></div>
+  <p class="suave" id="pie"></p>
+</section>
+
+<script>
+const P = "{{ P }}", GESTION = {{ 'true' if gestion else 'false' }};
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fecha = (iso) => iso ? iso.split("-").reverse().join("/") : "";
+let datos = { filas: [], semaforo: [], reglas: [] };
+
+function filtros() {
+  const p = new URLSearchParams();
+  if ($("f-transporte") && $("f-transporte").value) p.set("transporte", $("f-transporte").value);
+  if ($("f-curso").value) p.set("curso", $("f-curso").value);
+  if ($("f-estado").value) p.set("estado", $("f-estado").value);
+  return p;
+}
+async function cargar() {
+  const p = filtros();
+  $("b-csv").href = P + "/cumplimiento.csv?" + p;
+  const r = await fetch(P + "/api/cumplimiento?" + p, { credentials: "same-origin" });
+  datos = await r.json();
+  dibujar();
+}
+function whatsapp(f) {
+  let n = String(f.celular || "").replace(/\D/g, "");
+  if (!n) return "";
+  if (n.startsWith("54")) n = n.slice(2);
+  if (n.startsWith("9")) n = n.slice(1);
+  if (n.startsWith("0")) n = n.slice(1);
+  n = n.replace(/^(\d{2,4})15(\d{6,8})$/, "$1$2");          // 011 15 xxxx -> 11 xxxx
+  if (n.length !== 10) return "";
+  const txt = `Hola ${f.nombre.split(" ")[0]}, te recordamos que tenés pendiente la capacitación «${f.curso_titulo}»` +
+              (f.limite ? ` (vence el ${fecha(f.limite)})` : "") + `. Entrá a ${location.origin}/ con tu DNI y tu fecha de nacimiento.`;
+  return `https://wa.me/549${n}?text=${encodeURIComponent(txt)}`;
+}
+function dibujar() {
+  const s = datos.semaforo;
+  $("t-semaforo").innerHTML = s.length
+    ? `<thead><tr><th>Transporte</th><th class="n">Al día</th><th class="n">✅ Aprobados</th><th class="n">🟡 Por vencer</th><th class="n">⚪ Pendientes</th><th class="n">🔴 Fuera de término</th><th class="n">🔴 Vencidos</th><th class="n">Total</th></tr></thead><tbody>` +
+      s.map((g) => {
+        const c = g.al_dia_pct >= 85 ? "var(--verde)" : g.al_dia_pct >= 60 ? "var(--ambar)" : "var(--rojo)";
+        return `<tr><td><b>${esc(g.transporte)}</b></td><td class="n"><span class="barra-pct"><span style="width:${g.al_dia_pct}%;background:${c}"></span></span> <b>${g.al_dia_pct}%</b></td>` +
+          `<td class="n">${g.aprobado}</td><td class="n">${g.por_vencer}</td><td class="n">${g.pendiente}</td><td class="n">${g.atrasado}</td><td class="n">${g.vencido}</td><td class="n">${g.total}</td></tr>`;
+      }).join("") + "</tbody>"
+    : `<tr><td class="suave">Todavía no hay cursos asignados${GESTION ? ": cargá los choferes en <a href='" + P + "/choferes'>Choferes</a> y asignales cursos acá abajo." : "."}</td></tr>`;
+
+  const b = $("f-buscar").value.trim().toLowerCase();
+  const filas = datos.filas.filter((f) => !b || f.nombre.toLowerCase().includes(b) || f.dni.includes(b));
+  $("t-titulo").textContent = `${filas.length} asignación(es)`;
+  $("t-filas").innerHTML = filas.length
+    ? `<thead><tr>${GESTION ? '<th><input type="checkbox" id="todos"></th>' : ""}<th>Chofer</th><th>Transporte</th><th>Curso</th><th>Estado</th><th>Fecha límite</th><th>Aprobado</th><th>Vence</th><th class="n">Intentos</th><th class="n">Mejor nota</th><th></th></tr></thead><tbody>` +
+      filas.map((f) => {
+        const wa = ["pendiente", "atrasado", "vencido", "por_vencer"].includes(f.estado) ? whatsapp(f) : "";
+        return `<tr>${GESTION ? `<td><input type="checkbox" class="marca" value="${esc(f.dni)}"></td>` : ""}` +
+          `<td>${esc(f.nombre)}<div class="suave">${esc(f.dni)}</div></td><td>${esc(f.transporte || "")}</td><td>${esc(f.curso_titulo)}</td>` +
+          `<td>${esc(f.estado_txt)}</td><td>${fecha(f.limite)}</td><td>${fecha(f.aprobado_el)}</td><td>${fecha(f.vence)}</td>` +
+          `<td class="n">${f.intentos}</td><td class="n">${f.mejor ?? ""}</td>` +
+          `<td>${wa ? `<a class="boton chico" href="${wa}" target="_blank" rel="noopener" title="Mandarle un recordatorio por WhatsApp">💬</a>` : ""}</td></tr>`;
+      }).join("") + "</tbody>"
+    : `<tr><td class="suave">No hay asignaciones con ese filtro.</td></tr>`;
+  if ($("todos")) $("todos").onchange = () => document.querySelectorAll(".marca").forEach((x) => (x.checked = $("todos").checked));
+  $("pie").textContent = filas.length ? "💬 abre WhatsApp con un recordatorio listo para mandar." : "";
+
+  if ($("reglas")) $("reglas").innerHTML = datos.reglas.length
+    ? `<h3>Asignaciones automáticas a choferes nuevos</h3><ul>` + datos.reglas.map((r) =>
+        `<li>${esc(r.transporte)} → ${esc(nombreCurso(r.curso))}${r.plazo_dias ? ` (plazo ${r.plazo_dias} días)` : ""} ` +
+        `<button class="chico" onclick="quitarRegla('${esc(r.curso)}', ${r.transporte_id})">Quitar</button></li>`).join("") + "</ul>" : "";
+}
+const TITULOS = Object.fromEntries([...document.querySelectorAll("#f-curso option")].filter((o) => o.value).map((o) => [o.value, o.textContent]));
+const nombreCurso = (slug) => TITULOS[slug] || slug;
+
+async function accion(nombre, extra = {}) {
+  const quien = $("g-quien").value;
+  const cuerpo = { accion: nombre, curso: $("g-curso").value, limite: $("g-limite").value, ...extra };
+  if (quien === "marcados") {
+    cuerpo.dnis = [...document.querySelectorAll(".marca:checked")].map((x) => x.value);
+    if (!cuerpo.dnis.length && nombre !== "quitar_regla") { $("g-estado").textContent = "Marcá choferes en la lista de abajo (o elegí un transporte entero)."; return; }
+  } else {
+    cuerpo.transporte_id = quien.slice(1);
+    cuerpo.auto = $("g-auto").checked; cuerpo.plazo_dias = $("g-plazo").value;
+  }
+  const quienTxt = quien === "marcados" ? `${cuerpo.dnis.length} chofer(es)` : $("g-quien").selectedOptions[0].textContent.toLowerCase();
+  const pregunta = { recursar: `¿Hacer que ${quienTxt} vuelvan a hacer «${TITULOS[cuerpo.curso]}»?`,
+                     quitar: `¿Quitar «${TITULOS[cuerpo.curso]}» a ${quienTxt}?` }[nombre];
+  if (pregunta && !confirm(pregunta)) return;
+  const r = await fetch(P + "/api/asignaciones", { method: "POST", credentials: "same-origin",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) });
+  const d = await r.json().catch(() => ({}));
+  $("g-estado").innerHTML = r.ok && d.ok ? `<span class="ok">✔ ${esc(d.mensaje)}</span>` : `<span class="mal">✖ ${esc(d.error || d.detail || r.status)}</span>`;
+  cargar();
+}
+function quitarRegla(curso, tid) {
+  $("g-curso").value = curso; $("g-quien").value = "t" + tid; accion("quitar_regla");
+}
+if (GESTION) {
+  document.querySelectorAll("[data-accion]").forEach((b) => (b.onclick = () => accion(b.dataset.accion)));
+  $("g-quien").onchange = () => ($("g-auto-box").hidden = $("g-quien").value === "marcados");
+}
+["f-transporte", "f-curso", "f-estado"].forEach((id) => $(id) && ($(id).onchange = cargar));
+$("f-buscar").oninput = dibujar;
+cargar();
+</script>
+{% endblock %}

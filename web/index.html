@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Capacitaciones</title>
+<style>
+:root { --bg:#f5f6f8; --panel:#fff; --txt:#1c2230; --suave:#677085; --borde:#e2e5eb; --acento:#1f6feb; --ok:#1a7f37; --mal:#cf222e; --aviso:#9a6700; }
+@media (prefers-color-scheme: dark) { :root { --bg:#0f1218; --panel:#171b23; --txt:#e6e9ef; --suave:#8b93a5; --borde:#2a3040; --acento:#4c8dff; --ok:#3fb950; --mal:#f85149; --aviso:#d29922; } }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--txt); font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+main { max-width:640px; margin:0 auto; padding:16px; }
+h1 { font-size:24px; margin:8px 0 4px; } h2 { font-size:18px; margin:18px 0 6px; }
+.suave { color:var(--suave); font-size:14px; }
+.panel { background:var(--panel); border:1px solid var(--borde); border-radius:12px; padding:18px; margin:12px 0; }
+label { display:block; margin:12px 0 4px; font-weight:600; }
+input { width:100%; font:inherit; padding:12px; border:1px solid var(--borde); border-radius:8px; background:var(--bg); color:var(--txt); }
+button { width:100%; font:inherit; font-weight:600; padding:14px; margin-top:16px; border:0; border-radius:10px; background:var(--acento); color:#fff; cursor:pointer; }
+button.link { width:auto; background:none; color:var(--acento); padding:0; margin:0; font-weight:400; text-decoration:underline; }
+.error { color:var(--mal); font-size:14px; min-height:1em; margin-top:6px; }
+.curso { display:block; background:var(--panel); border:1px solid var(--borde); border-radius:12px; padding:18px; margin:12px 0;
+         color:inherit; text-decoration:none; transition:border-color .15s, transform .15s; }
+a.curso:hover { border-color:var(--acento); transform:translateY(-1px); }
+.curso b { display:block; font-size:18px; margin-bottom:4px; }
+.curso .ir { color:var(--acento); font-weight:600; font-size:15px; margin-top:8px; display:block; }
+.estado { font-size:14px; font-weight:600; } .e-aprobado { color:var(--ok); } .e-por_vencer, .e-pendiente { color:var(--aviso); } .e-atrasado, .e-vencido { color:var(--mal); }
+.oculto { display:none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🚚 Capacitaciones para choferes</h1>
+
+  <section id="ingreso" class="panel">
+    <b>Ingresá para ver tus capacitaciones</b>
+    <label for="dni">DNI</label><input id="dni" type="tel" inputmode="numeric" placeholder="Sin puntos, ej. 30123456" autocomplete="off">
+    <label for="nac">Fecha de nacimiento</label><input id="nac" type="date" min="1930-01-01" max="2012-12-31">
+    <div class="error" id="err"></div>
+    <button id="b-ingresar">Ingresar</button>
+  </section>
+
+  <section id="mios" class="oculto">
+    <p>Hola <b id="nombre"></b> <span class="suave" id="transporte"></span> · <button class="link" id="b-salir">Salir</button></p>
+    <div id="asignados"></div>
+  </section>
+
+  <h2 id="t-abiertos">Capacitaciones abiertas</h2>
+  <div id="abiertos"><p class="suave">Cargando…</p></div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fecha = (iso) => iso ? iso.split("-").reverse().join("/") : "";
+const guardado = { get: (k) => { try { return sessionStorage.getItem(k); } catch { return null; } },
+                   set: (k, v) => { try { v === null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch {} } };
+async function post(ruta, cuerpo) {
+  const r = await fetch("/panel/publico/" + ruta, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) });
+  const d = await r.json().catch(() => ({}));
+  return { ok: r.ok && d.ok !== false, d };
+}
+const tarjeta = (c, extra = "", ir = "Empezar →") => `<a class="curso" href="/${encodeURIComponent(c.slug)}"><b>${esc(c.titulo)}</b>` +
+  `<span class="suave">${esc(c.descripcion || "")}</span>${extra}<span class="ir">${ir}</span></a>`;
+
+function abiertos(lista, conSesion) {
+  $("t-abiertos").textContent = conSesion ? "Otras capacitaciones disponibles" : "Capacitaciones abiertas";
+  $("abiertos").innerHTML = lista.length ? lista.map((c) => tarjeta(c)).join("")
+    : `<p class="suave">${conSesion ? "No hay otras capacitaciones abiertas." : "No hay capacitaciones abiertas en este momento. Ingresá para ver las tuyas."}</p>`;
+}
+async function cargarPublicos() {
+  try { abiertos(await (await fetch("/panel/publico/cursos")).json(), false); }
+  catch { $("abiertos").innerHTML = `<p class="suave">No se pudo cargar la lista. Probá de nuevo en un rato.</p>`; }
+}
+async function cargarMios() {
+  const token = guardado.get("chofer_token");
+  if (!token) return false;
+  const { ok, d } = await post("chofer/cursos", { token });
+  if (!ok) { guardado.set("chofer_token", null); return false; }
+  guardado.set("chofer_nombre", d.nombre);
+  $("ingreso").classList.add("oculto"); $("mios").classList.remove("oculto");
+  $("nombre").textContent = d.nombre; $("transporte").textContent = d.transporte ? "· " + d.transporte : "";
+  $("asignados").innerHTML = d.asignados.length
+    ? "<h2>Tus capacitaciones</h2>" + d.asignados.map((c) => {
+        const det = { aprobado: `Aprobada el ${fecha(c.aprobado_el)}${c.vence ? ` · vence el ${fecha(c.vence)}` : ""}`,
+                      por_vencer: `Vence el ${fecha(c.vence)}: hacela de nuevo antes`,
+                      vencido: `Venció el ${fecha(c.vence)}: la tenés que hacer de nuevo`,
+                      atrasado: `Tenías hasta el ${fecha(c.limite)}`,
+                      pendiente: c.limite ? `Tenés hasta el ${fecha(c.limite)}` : "" }[c.estado];
+        const intentos = c.intentos && c.estado !== "aprobado" ? ` · ${c.intentos} intento(s)` : "";
+        return tarjeta(c, `<div class="estado e-${c.estado}">${esc(c.estado_txt)}</div><div class="suave">${esc(det)}${intentos}</div>`,
+                       c.estado === "aprobado" ? "Repasar →" : "Hacer la capacitación →");
+      }).join("")
+    : `<p class="suave">No tenés capacitaciones asignadas por ahora.</p>`;
+  abiertos(d.abiertos, true);
+  return true;
+}
+$("b-ingresar").onclick = async () => {
+  $("err").textContent = "";
+  const dni = $("dni").value.replace(/\D/g, ""), nacimiento = $("nac").value;
+  if (!/^\d{7,8}$/.test(dni) || !nacimiento) { $("err").textContent = "Completá tu DNI y tu fecha de nacimiento."; return; }
+  $("b-ingresar").disabled = true;
+  const { ok, d } = await post("chofer/ingresar", { dni, nacimiento });
+  $("b-ingresar").disabled = false;
+  if (!ok) { $("err").textContent = d.error || "No se pudo ingresar."; return; }
+  guardado.set("chofer_token", d.token);
+  cargarMios();
+};
+$("b-salir").onclick = () => { guardado.set("chofer_token", null); guardado.set("chofer_nombre", null); location.reload(); };
+cargarMios().then((ok) => { if (!ok) cargarPublicos(); });
+</script>
+</body>
+</html>
