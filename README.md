@@ -18,7 +18,8 @@ Sin servicios externos.
 
 **Para los capacitadores** (`/panel/`)
 - **Cursos**: material, videos (subida por partes, hasta 4 GB), YouTube, modo de atención, tiempo mínimo,
-  **preguntas y respuestas propias** (o el banco de la Ley Nacional de Tránsito 24.449), cantidad de preguntas,
+  **preguntas y respuestas propias** (editor o **carga masiva** desde planilla/texto: "1. ¿…? a) … b) …" con hoja
+  de clave, o columnas Pregunta | Correcta | Incorrectas), o el banco de la Ley Nacional de Tránsito 24.449; cantidad de preguntas,
   % para aprobar, **acceso abierto o solo asignados**, **vigencia** (anual, cada N meses o sin vencimiento).
 - **Choferes**: alta de a uno o **importación de archivos** (.xlsx, .xls, .csv, .txt) o pegado desde Excel,
   con revisión antes de guardar.

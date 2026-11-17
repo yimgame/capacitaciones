@@ -20,6 +20,29 @@
   </div>
 </div>
 
+<details class="tarjeta" id="masiva">
+  <summary><b>📤 Carga masiva de preguntas</b> <span class="suave">— desde una planilla o texto pegado</span></summary>
+  <p class="suave">Formatos que entiende:</p>
+  <ul class="suave">
+    <li><b>Texto numerado</b>: <code>1. ¿Pregunta? a) opción b) opción c) opción</code> (en una celda o en varias líneas), con títulos de tema en el medio.
+      La respuesta sale de una <b>hoja de clave</b> con pares <i>Nº | letra</i> (ej. <i>Preg. | Resp.</i>), de <code>Respuesta: b</code> en el texto,
+      o marcando la correcta con <code>*</code> (ej. <code>*b) 80 km/h</code>).</li>
+    <li><b>Planilla en columnas</b>: <i>Pregunta | Correcta | Incorrecta 1 | Incorrecta 2…</i> o <i>Pregunta | A | B | C | D | Respuesta</i> (letra).</li>
+    <li><b>Texto pegado</b>: las preguntas y, al final, una línea <code>Clave:</code> seguida de <code>1 a, 2 b, 3 c…</code></li>
+  </ul>
+  <div class="fila-form">
+    <label>Planilla (.xlsx, .xls, .csv)<input type="file" id="m-archivo" accept=".xlsx,.xls,.csv,.ods,.txt"></label>
+    <label>Qué hacer<select id="m-modo"><option value="agregar">Agregar a las preguntas actuales (saltea repetidas)</option>
+      <option value="reemplazar">Reemplazar todas las preguntas del curso</option></select></label>
+  </div>
+  <textarea id="m-texto" rows="6" class="mono" placeholder="…o pegá acá el texto de las preguntas"></textarea>
+  <div class="fila-form" style="margin-top:8px">
+    <button type="button" id="m-leer">🔍 Leer</button>
+    <button type="button" class="primario" id="m-cargar" disabled>➕ Pasar al editor</button>
+  </div>
+  <div id="m-resultado"></div>
+</details>
+
 <div id="lista"></div>
 
 <div class="tarjeta guardar-fijo">
@@ -38,6 +61,8 @@
 .guardar-fijo { position: sticky; bottom: 0; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; z-index: 5; }
 </style>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="{{ P }}/static/preguntas_import.js?v=1"></script>
 <script>
 const P = "{{ P }}", SLUG = "{{ c.slug }}", MAX_INC = 5;
 const INICIAL = {{ datos | tojson }};
@@ -137,6 +162,49 @@ $("b-guardar").onclick = async () => {
   $("b-guardar").disabled = false;
 };
 $("por-examen").oninput = marcar; $("aprobacion").oninput = marcar;
+// --- carga masiva
+const escH = (t) => String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+let leidas = [];
+$("m-archivo").onchange = () => { $("m-texto").value = ""; $("m-cargar").disabled = true; };
+$("m-texto").oninput = () => { $("m-archivo").value = ""; $("m-cargar").disabled = true; };
+$("m-leer").onclick = async () => {
+  $("m-resultado").innerHTML = "<p class='suave'>Leyendo…</p>"; $("m-cargar").disabled = true;
+  try {
+    let r;
+    const f = $("m-archivo").files[0];
+    if (f) {
+      const wb = XLSX.read(await f.arrayBuffer(), { cellDates: false });
+      r = ImportPreguntas.desdeLibro(wb.SheetNames.map((n) => ({ nombre: n,
+            filas: XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, blankrows: false, defval: "" }) })));
+    } else if ($("m-texto").value.trim()) {
+      r = ImportPreguntas.desdePegado($("m-texto").value);
+    } else { throw new Error("Elegí una planilla o pegá el texto."); }
+    leidas = r.preguntas;
+    const ya = new Set(preguntas.map((q) => q.pregunta.trim().toLowerCase()));
+    const repetidas = leidas.filter((q) => ya.has(q.pregunta.trim().toLowerCase())).length;
+    $("m-resultado").innerHTML =
+      `<p class="aviso">Formato: ${escH(r.formato)} · <b>${leidas.length}</b> preguntas leídas` +
+      `${r.errores.length ? ` · <b>${r.errores.length}</b> con problemas (no se cargan)` : ""}` +
+      `${repetidas && $("m-modo").value === "agregar" ? ` · ${repetidas} ya están en el curso (se saltean)` : ""}` +
+      `${r.temas.length ? `<br><span class="suave">Temas: ${r.temas.map(escH).join(" · ")}</span>` : ""}</p>` +
+      (r.errores.length ? `<details open><summary>Problemas</summary><ul>${r.errores.slice(0, 60).map((e) => `<li>${escH(e)}</li>`).join("")}</ul></details>` : "") +
+      (leidas.length ? `<details><summary>Ver las preguntas leídas</summary><ol>${leidas.map((q) =>
+        `<li><b>${escH(q.pregunta)}</b><br><span class="ok">✔ ${escH(q.correcta)}</span>${q.incorrectas.map((i) => `<br><span class="suave">✘ ${escH(i)}</span>`).join("")}</li>`).join("")}</ol></details>` : "");
+    $("m-cargar").disabled = !leidas.length;
+  } catch (e) { $("m-resultado").innerHTML = `<p class="error">${escH(e.message)}</p>`; }
+};
+$("m-cargar").onclick = () => {
+  if ($("m-modo").value === "reemplazar") {
+    if (preguntas.length && !confirm(`Se reemplazan las ${preguntas.length} preguntas actuales por las ${leidas.length} leídas. ¿Seguir? (no se guarda hasta que toques Guardar)`)) return;
+    preguntas = leidas.map((q) => ({ ...q, incorrectas: [...q.incorrectas] }));
+  } else {
+    const ya = new Set(preguntas.map((q) => q.pregunta.trim().toLowerCase()));
+    for (const q of leidas) if (!ya.has(q.pregunta.trim().toLowerCase())) preguntas.push({ ...q, incorrectas: [...q.incorrectas] });
+  }
+  $("buscar").value = ""; marcar(); dibujar();
+  $("m-resultado").innerHTML = `<p class="aviso">✔ Listo: ahora el curso tiene <b>${preguntas.length}</b> preguntas en el editor. <b>Tocá «💾 Guardar preguntas»</b> para que queden guardadas.</p>`;
+  $("m-cargar").disabled = true; $("masiva").open = true;
+};
 window.addEventListener("beforeunload", (e) => { if (cambios) { e.preventDefault(); e.returnValue = ""; } });
 dibujar();
 $("estado").textContent = "";
