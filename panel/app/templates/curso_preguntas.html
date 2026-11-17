@@ -22,6 +22,7 @@
 
 <details class="tarjeta" id="masiva">
   <summary><b>📤 Carga masiva de preguntas</b> <span class="suave">— desde una planilla o texto pegado</span></summary>
+  <p class="suave">Elegí el archivo o pegá el texto: las preguntas pasan solas al editor de abajo. Quedan guardadas cuando tocás <b>«💾 Guardar preguntas»</b>.</p>
   <p class="suave">Formatos que entiende:</p>
   <ul class="suave">
     <li><b>Texto numerado</b>: <code>1. ¿Pregunta? a) opción b) opción c) opción</code> (en una celda o en varias líneas), con títulos de tema en el medio.
@@ -38,8 +39,7 @@
   </div>
   <textarea id="m-texto" rows="6" class="mono" placeholder="…o pegá acá las preguntas y, debajo, la tabla de respuestas (Preg. / Resp.)"></textarea>
   <div class="fila-form" style="margin-top:8px">
-    <button type="button" id="m-leer">🔍 Leer</button>
-    <button type="button" class="primario" id="m-cargar" disabled>➕ Pasar al editor</button>
+    <button type="button" id="m-leer" title="Si escribiste o corregiste el texto a mano">🔁 Volver a leer</button>
   </div>
   <div id="m-resultado"></div>
 </details>
@@ -116,7 +116,10 @@ function dibujar() {
       const quitar = document.createElement("button"); quitar.type = "button"; quitar.className = "chico"; quitar.textContent = "✕";
       quitar.title = "Quitar esta opción";
       quitar.onclick = () => { q.incorrectas.splice(j, 1); marcar(); dibujar(); };
-      f.append(campo(inc, (v) => (q.incorrectas[j] = v), "Respuesta incorrecta"), quitar);
+      const hacerOk = document.createElement("button"); hacerOk.type = "button"; hacerOk.className = "chico"; hacerOk.textContent = "✔ Correcta";
+      hacerOk.title = "Que esta sea la respuesta correcta (la actual pasa a incorrecta)";
+      hacerOk.onclick = () => { [q.correcta, q.incorrectas[j]] = [q.incorrectas[j], q.correcta]; marcar(); dibujar(); };
+      f.append(campo(inc, (v) => (q.incorrectas[j] = v), "Respuesta incorrecta"), hacerOk, quitar);
       t.append(f);
     });
     if (q.incorrectas.length < MAX_INC) {
@@ -166,10 +169,9 @@ $("por-examen").oninput = marcar; $("aprobacion").oninput = marcar;
 // --- carga masiva
 const escH = (t) => String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 let leidas = [];
-$("m-archivo").onchange = () => { $("m-texto").value = ""; $("m-cargar").disabled = true; };
-$("m-texto").oninput = () => { $("m-archivo").value = ""; $("m-cargar").disabled = true; };
-$("m-leer").onclick = async () => {
-  $("m-resultado").innerHTML = "<p class='suave'>Leyendo…</p>"; $("m-cargar").disabled = true;
+// Al elegir el archivo o pegar el texto, las preguntas pasan solas al editor (se guardan con «Guardar preguntas»).
+async function leerYCargar() {
+  $("m-resultado").innerHTML = "<p class='suave'>Leyendo…</p>";
   try {
     let r;
     const f = $("m-archivo").files[0];
@@ -179,33 +181,37 @@ $("m-leer").onclick = async () => {
             filas: XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, blankrows: false, defval: "" }) })));
     } else if ($("m-texto").value.trim()) {
       r = ImportPreguntas.desdePegado($("m-texto").value);
-    } else { throw new Error("Elegí una planilla o pegá el texto."); }
+    } else { $("m-resultado").innerHTML = ""; return; }
     leidas = r.preguntas;
-    const ya = new Set(preguntas.map((q) => q.pregunta.trim().toLowerCase()));
-    const repetidas = leidas.filter((q) => ya.has(q.pregunta.trim().toLowerCase())).length;
+    let agregadas = leidas.length, repetidas = 0;
+    if (leidas.length) {
+      if ($("m-modo").value === "reemplazar") {
+        preguntas = leidas.map((q) => ({ ...q, incorrectas: [...q.incorrectas] }));
+      } else {
+        const ya = new Set(preguntas.map((q) => q.pregunta.trim().toLowerCase()));
+        agregadas = 0;
+        for (const q of leidas) {
+          if (ya.has(q.pregunta.trim().toLowerCase())) { repetidas++; continue; }
+          preguntas.push({ ...q, incorrectas: [...q.incorrectas] }); agregadas++;
+        }
+      }
+      $("buscar").value = ""; marcar(); dibujar();
+    }
     $("m-resultado").innerHTML =
-      `<p class="aviso">Formato: ${escH(r.formato)} · <b>${leidas.length}</b> preguntas leídas` +
-      `${r.errores.length ? ` · <b>${r.errores.length}</b> con problemas (no se cargan)` : ""}` +
-      `${repetidas && $("m-modo").value === "agregar" ? ` · ${repetidas} ya están en el curso (se saltean)` : ""}` +
-      `${r.temas.length ? `<br><span class="suave">Temas: ${r.temas.map(escH).join(" · ")}</span>` : ""}</p>` +
-      (r.errores.length ? `<details open><summary>Problemas</summary><ul>${r.errores.slice(0, 60).map((e) => `<li>${escH(e)}</li>`).join("")}</ul></details>` : "") +
-      (leidas.length ? `<details><summary>Ver las preguntas leídas</summary><ol>${leidas.map((q) =>
-        `<li><b>${escH(q.pregunta)}</b><br><span class="ok">✔ ${escH(q.correcta)}</span>${q.incorrectas.map((i) => `<br><span class="suave">✘ ${escH(i)}</span>`).join("")}</li>`).join("")}</ol></details>` : "");
-    $("m-cargar").disabled = !leidas.length;
+      (leidas.length
+        ? `<p class="aviso">✔ ${$("m-modo").value === "reemplazar" ? "Se reemplazaron por" : "Se agregaron"} <b>${agregadas}</b> preguntas` +
+          `${repetidas ? ` (${repetidas} ya estaban y se saltearon)` : ""} · formato: ${escH(r.formato)}. ` +
+          `Ahora el curso tiene <b>${preguntas.length}</b> en el editor: revisalas y tocá <b>«💾 Guardar preguntas»</b>.` +
+          `${r.temas.length ? `<br><span class="suave">Temas: ${r.temas.map(escH).join(" · ")}</span>` : ""}</p>`
+        : "") +
+      (r.errores.length ? `<p class="error">${r.errores.length === 1 ? "" : `<b>${r.errores.length}</b> con problemas (no se cargaron):`}</p>` +
+        `<ul>${r.errores.slice(0, 60).map((e) => `<li>${escH(e)}</li>`).join("")}</ul>` : "");
   } catch (e) { $("m-resultado").innerHTML = `<p class="error">${escH(e.message)}</p>`; }
-};
-$("m-cargar").onclick = () => {
-  if ($("m-modo").value === "reemplazar") {
-    if (preguntas.length && !confirm(`Se reemplazan las ${preguntas.length} preguntas actuales por las ${leidas.length} leídas. ¿Seguir? (no se guarda hasta que toques Guardar)`)) return;
-    preguntas = leidas.map((q) => ({ ...q, incorrectas: [...q.incorrectas] }));
-  } else {
-    const ya = new Set(preguntas.map((q) => q.pregunta.trim().toLowerCase()));
-    for (const q of leidas) if (!ya.has(q.pregunta.trim().toLowerCase())) preguntas.push({ ...q, incorrectas: [...q.incorrectas] });
-  }
-  $("buscar").value = ""; marcar(); dibujar();
-  $("m-resultado").innerHTML = `<p class="aviso">✔ Listo: ahora el curso tiene <b>${preguntas.length}</b> preguntas en el editor. <b>Tocá «💾 Guardar preguntas»</b> para que queden guardadas.</p>`;
-  $("m-cargar").disabled = true; $("masiva").open = true;
-};
+  $("masiva").open = true;
+}
+$("m-archivo").onchange = () => { $("m-texto").value = ""; leerYCargar(); };
+$("m-texto").onpaste = () => { $("m-archivo").value = ""; setTimeout(leerYCargar, 0); };   // después de que entra el texto
+$("m-leer").onclick = leerYCargar;
 window.addEventListener("beforeunload", (e) => { if (cambios) { e.preventDefault(); e.returnValue = ""; } });
 dibujar();
 $("estado").textContent = "";
