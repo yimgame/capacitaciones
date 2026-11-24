@@ -468,6 +468,79 @@ def cumplimiento(resultados, transporte_id=None, curso=None, dni=None, jrt=None)
     return filas
 
 
+def _fin_de_mes(d):
+    return _sumar_meses(d.replace(day=1), 1) - timedelta(days=1)
+
+
+def avance(curso, resultados, transporte_id=None, hoy=None):
+    """Avance de un curso en su período (fecha de inicio y de fin del curso; si no tiene, desde la primera
+    asignación hasta hoy): % de los asignados que aprobó, mes a mes, contra lo esperado (lineal de 0% al
+    inicio a 100% al fin). También por transporte y global. Un chofer cuenta desde su primer aprobado válido
+    (posterior a su asignación o a su último recursar)."""
+    hoy = hoy or datetime.now(TZ).date()
+    filas_ = []
+    with closing(con()) as c:
+        sql = """SELECT a.dni, a.desde, a.limite, ch.transporte_id, t.nombre AS transporte FROM asignaciones a
+                 JOIN choferes ch ON ch.dni = a.dni LEFT JOIN transportes t ON t.id = ch.transporte_id
+                 WHERE ch.activo = 1 AND a.curso = ?"""
+        args = [curso["slug"]]
+        if transporte_id:
+            sql += " AND ch.transporte_id = ?"
+            args.append(transporte_id)
+        filas_ = [dict(r) for r in c.execute(sql, args)]
+    aprobados = {}
+    for r in sorted((r for r in resultados if r["curso"] == curso["slug"] and r["aprobado"]), key=lambda r: r["fecha"]):
+        aprobados.setdefault(r["dni"], []).append(_fecha_local(r["fecha"]))
+    for f in filas_:
+        desde = _fecha_local(f["desde"])
+        f["aprobo"] = next((x.date() for x in aprobados.get(f["dni"], []) if x >= desde), None)
+    def fecha(s):
+        try:
+            return date.fromisoformat(str(s)[:10]) if s else None
+        except ValueError:
+            return None
+    inicio = fecha(curso.get("periodo_inicio")) or min((_fecha_local(f["desde"]).date() for f in filas_), default=hoy)
+    fin = fecha(curso.get("periodo_fin"))
+    con_periodo = bool(curso.get("periodo_inicio") and fin)
+    fin = fin or max(hoy, inicio)
+    total = len(filas_)
+
+    def esperado(d):
+        if not con_periodo or fin <= inicio:
+            return None
+        return round(max(0.0, min(1.0, (d - inicio).days / (fin - inicio).days)) * 100, 1)
+
+    def pct(n, t):
+        return round(n * 100 / t, 1) if t else None
+
+    meses, m = [], inicio.replace(day=1)
+    while m <= fin and len(meses) < 36:
+        futuro = m > hoy
+        parcial = not futuro and _fin_de_mes(m) > hoy and fin > hoy      # mes en curso: real y esperado a hoy
+        corte = min(_fin_de_mes(m), fin, hoy) if parcial else min(_fin_de_mes(m), fin)
+        n = sum(1 for f in filas_ if f["aprobo"] and f["aprobo"] <= corte)
+        en_mes = sum(1 for f in filas_ if f["aprobo"] and m <= f["aprobo"] <= corte)
+        meses.append({"mes": m.isoformat()[:7], "corte": corte.isoformat(), "aprobados_mes": None if futuro else en_mes,
+                      "aprobados": None if futuro else n, "real": None if futuro else pct(n, total),
+                      "esperado": esperado(corte), "parcial": parcial})
+        m = _sumar_meses(m, 1)
+    hoy_corte = min(hoy, fin)
+    grupos = {}
+    for f in filas_:
+        g = grupos.setdefault(f["transporte_id"], {"transporte_id": f["transporte_id"],
+                                                    "transporte": f["transporte"] or "Sin transporte", "total": 0, "aprobados": 0})
+        g["total"] += 1
+        g["aprobados"] += 1 if f["aprobo"] and f["aprobo"] <= hoy_corte else 0
+    esp_hoy = esperado(hoy_corte)
+    por_transporte = sorted(({**g, "real": pct(g["aprobados"], g["total"]), "esperado": esp_hoy} for g in grupos.values()),
+                            key=lambda g: (g["real"], g["transporte"]))
+    hechos = sum(1 for f in filas_ if f["aprobo"] and f["aprobo"] <= hoy_corte)
+    return {"curso": curso["slug"], "titulo": curso["titulo"], "inicio": inicio.isoformat(), "fin": fin.isoformat(),
+            "con_periodo": con_periodo, "total": total, "aprobados": hechos, "real": pct(hechos, total),
+            "esperado": esp_hoy, "faltan": total - hechos, "dias_restantes": (fin - hoy).days if fin >= hoy else 0,
+            "meses": meses, "por_transporte": por_transporte}
+
+
 def resumen_cumplimiento(filas):
     """Semáforo por transporte."""
     grupos = {}

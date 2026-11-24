@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block titulo %}Avance · Panel de capacitación{% endblock %}
+{% block contenido %}
+{% set coord = u.rol == 'coordinador' %}
+<section class="filtros tarjeta">
+  <div class="fila-form">
+    <label>Curso<select id="f-curso">{% for c in cursos %}<option value="{{ c.slug }}">{{ c.titulo }}</option>{% endfor %}</select></label>
+    {% if not coord %}<label>Transporte<select id="f-transporte"><option value="">Todos (global)</option>
+      {% for t in transportes %}<option value="{{ t.id }}">{{ t.nombre }}</option>{% endfor %}</select></label>{% endif %}
+  </div>
+  <p class="suave" id="periodo" style="margin:8px 0 0"></p>
+</section>
+
+<div class="kpis" id="kpis"></div>
+
+<section class="tarjeta viz">
+  <h2 style="margin-top:0">Avance mes a mes <span class="suave">— % de los choferes asignados que aprobó</span></h2>
+  <div class="leyenda" id="leyenda"></div>
+  <div class="grafico" id="grafico"><div class="tip" id="tip" hidden></div></div>
+  <details><summary>Ver como tabla</summary><div class="tabla-scroll"><table id="t-meses"></table></div></details>
+</section>
+
+<section class="tarjeta viz">
+  <h2 style="margin-top:0">Por transporte <span class="suave">— aprobados hasta hoy</span></h2>
+  <div class="tabla-scroll"><table id="t-transportes"></table></div>
+</section>
+
+<style>
+.viz { --serie-real:#2a78d6; --serie-esp:#eb6834; --grilla:#e4e7ec; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .viz { --serie-real:#3987e5; --serie-esp:#d95926; --grilla:#2a3441; } }
+:root[data-theme="dark"] .viz { --serie-real:#3987e5; --serie-esp:#d95926; --grilla:#2a3441; }
+.leyenda { display:flex; gap:16px; font-size:13px; color:var(--suave); margin-bottom:6px; flex-wrap:wrap; }
+.leyenda i { display:inline-block; width:14px; height:3px; border-radius:2px; vertical-align:middle; margin-right:6px; }
+.grafico { position:relative; }
+.grafico svg { display:block; overflow:visible; }
+.grafico text { font:12px system-ui, sans-serif; fill:var(--suave); }
+.grafico text.etq { font-weight:600; fill:var(--txt); }
+.tip { position:absolute; pointer-events:none; background:var(--tarjeta); border:1px solid var(--borde); border-radius:8px; padding:8px 10px;
+  font-size:13px; box-shadow:0 4px 14px rgba(0,0,0,.12); min-width:170px; z-index:2; }
+.tip b { display:block; margin-bottom:4px; } .tip i { display:inline-block; width:10px; height:3px; border-radius:2px; vertical-align:middle; margin-right:6px; }
+.medidor { position:relative; height:10px; background:var(--grilla); border-radius:5px; min-width:140px; }
+.medidor .r { position:absolute; left:0; top:0; bottom:0; background:var(--serie-real); border-radius:5px; }
+.medidor .e { position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--serie-esp); }
+.estado-ok { color:var(--verde); } .estado-medio { color:var(--ambar); } .estado-mal { color:var(--rojo); }
+</style>
+
+<script>
+const P = "{{ P }}";
+</script>
+{% raw %}
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const MES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const mesTxt = (m) => `${MES[Number(m.slice(5, 7)) - 1]} ${m.slice(2, 4)}`;
+const fecha = (d) => d ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : "";
+const pct = (v) => v === null || v === undefined ? "—" : `${String(v).replace(".", ",")}%`;
+const leer = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const guardar = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+if (leer("avance_curso") && [...$("f-curso").options].some((o) => o.value === leer("avance_curso"))) $("f-curso").value = leer("avance_curso");
+
+// ¿cómo viene contra lo esperado? (siempre con texto e ícono, no solo color)
+function comparar(real, esp) {
+  if (esp === null || esp === undefined || real === null) return null;
+  const d = Math.round((real - esp) * 10) / 10;
+  if (d >= 0) return { cls: "ok", txt: "✔ Al día", d };
+  if (d >= -10) return { cls: "medio", txt: "⚠ Un poco atrasado", d };
+  return { cls: "mal", txt: "✖ Atrasado", d };
+}
+
+async function cargar() {
+  const q = new URLSearchParams({ curso: $("f-curso").value, transporte: $("f-transporte") ? $("f-transporte").value : "" });
+  guardar("avance_curso", $("f-curso").value);
+  const d = await (await fetch(`${P}/api/avance?${q}`, { credentials: "same-origin" })).json();
+  $("periodo").innerHTML = d.con_periodo
+    ? `Período del curso: <b>${fecha(d.inicio)}</b> al <b>${fecha(d.fin)}</b>${d.dias_restantes ? ` · faltan ${d.dias_restantes} días` : " · terminado"}. Lo esperado sube parejo de 0% al inicio a 100% al fin.`
+    : `Este curso no tiene fecha de inicio y de fin: se muestra desde la primera asignación hasta hoy, sin lo esperado. Ponelas en <a href="${P}/cursos/${encodeURIComponent(d.curso)}">Cursos → editar</a>.`;
+  const c = comparar(d.real, d.esperado);
+  $("kpis").innerHTML = [
+    [`Avance${$("f-transporte") && $("f-transporte").value ? "" : " global"}`, pct(d.real), `${d.aprobados} de ${d.total} asignados aprobaron`, c ? (c.cls === "ok" ? "bien" : c.cls) : ""],
+    ["Esperado a hoy", d.esperado === null ? "—" : pct(d.esperado), c ? `${c.txt} (${c.d > 0 ? "+" : ""}${String(c.d).replace(".", ",")} puntos)` : "Sin período cargado", ""],
+    ["Les falta aprobar", d.faltan, d.total ? `${pct(Math.round(d.faltan * 1000 / d.total) / 10)} de los asignados` : "Sin asignados", ""],
+  ].map(([t, v, s, cls]) => `<div class="kpi ${cls}"><div class="kpi-t">${esc(t)}</div><div class="kpi-v">${esc(v)}</div><div class="kpi-s">${esc(s)}</div></div>`).join("");
+  grafico(d);
+  $("t-meses").innerHTML = `<thead><tr><th>Mes</th><th class="n">Aprobaron en el mes</th><th class="n">Acumulado</th><th class="n">Real</th><th class="n">Esperado</th></tr></thead><tbody>` +
+    d.meses.map((m) => `<tr><td>${mesTxt(m.mes)}${m.parcial ? " <span class='suave'>(hasta hoy)</span>" : ""}</td><td class="n">${m.aprobados_mes ?? "—"}</td>
+      <td class="n">${m.aprobados ?? "—"}</td><td class="n">${pct(m.real)}</td><td class="n">${pct(m.esperado)}</td></tr>`).join("") + "</tbody>";
+  $("t-transportes").innerHTML = d.por_transporte.length
+    ? `<thead><tr><th>Transporte</th><th class="n">Asignados</th><th class="n">Aprobados</th><th>Avance</th><th class="n">Real</th>${d.con_periodo ? '<th class="n">Esperado</th><th>Cómo viene</th>' : ""}</tr></thead><tbody>` +
+      d.por_transporte.map((t) => { const k = comparar(t.real, t.esperado);
+        return `<tr><td>${esc(t.transporte)}</td><td class="n">${t.total}</td><td class="n">${t.aprobados}</td>
+          <td><div class="medidor" title="Real ${pct(t.real)}${t.esperado !== null ? " · esperado " + pct(t.esperado) : ""}"><div class="r" style="width:${t.real || 0}%"></div>${t.esperado !== null ? `<div class="e" style="left:calc(${t.esperado}% - 1px)"></div>` : ""}</div></td>
+          <td class="n">${pct(t.real)}</td>${d.con_periodo ? `<td class="n">${pct(t.esperado)}</td><td class="estado-${k ? k.cls : ""}">${k ? k.txt : ""}</td>` : ""}</tr>`; }).join("") + "</tbody>"
+    : `<tr><td class="suave">Nadie tiene asignado este curso${$("f-transporte") && $("f-transporte").value ? " en este transporte" : ""}.</td></tr>`;
+}
+
+// --------------------------------------------------------------- gráfico de líneas (SVG)
+let ultimo = null;
+function grafico(d) {
+  ultimo = d;
+  const conEsp = d.meses.some((m) => m.esperado !== null);
+  $("leyenda").innerHTML = `<span><i style="background:var(--serie-real)"></i>Real (aprobados)</span>` +
+    (conEsp ? `<span><i style="background:var(--serie-esp)"></i>Esperado</span>` : "");
+  // se dibuja al ancho real (así la letra queda de 12px en la compu y en el celular)
+  const W = Math.max(300, $("grafico").clientWidth || 760), H = W < 520 ? 220 : 280, iz = 40, de = W < 520 ? 70 : 84, ar = 14, ab = 30, n = d.meses.length;
+  const x = (i) => iz + (n === 1 ? (W - iz - de) / 2 : i * (W - iz - de) / (n - 1));
+  const y = (v) => ar + (100 - v) * (H - ar - ab) / 100;
+  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Avance mes a mes: real y esperado">`;
+  for (const v of [0, 25, 50, 75, 100]) s += `<line x1="${iz}" x2="${W - de}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grilla)" stroke-width="1"/><text x="${iz - 8}" y="${y(v) + 4}" text-anchor="end">${v}%</text>`;
+  const paso = Math.ceil(n / Math.max(2, Math.floor((W - iz - de) / 56)));
+  d.meses.forEach((m, i) => { if (i % paso === 0 || i === n - 1) s += `<text x="${x(i)}" y="${H - 8}" text-anchor="middle">${mesTxt(m.mes)}</text>`; });
+  const linea = (campo, color) => { const pts = d.meses.map((m, i) => m[campo] === null ? null : [x(i), y(m[campo])]).filter(Boolean);
+    return pts.length > 1 ? `<polyline points="${pts.map((p) => p.join(",")).join(" ")}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>` : ""; };
+  if (conEsp) s += linea("esperado", "var(--serie-esp)");
+  s += linea("real", "var(--serie-real)");
+  d.meses.forEach((m, i) => { if (m.real !== null) s += `<circle cx="${x(i)}" cy="${y(m.real)}" r="4.5" fill="var(--serie-real)" stroke="var(--tarjeta)" stroke-width="2"/>`; });
+  // etiquetas directas al final de cada línea (solo la última)
+  const ult = (campo) => { for (let i = n - 1; i >= 0; i--) if (d.meses[i][campo] !== null) return i; return -1; };
+  const ir = ult("real"), ie = conEsp ? ult("esperado") : -1;
+  let yr = ir >= 0 ? y(d.meses[ir].real) : 0, ye = ie >= 0 ? y(d.meses[ie].esperado) : 0;
+  if (ir >= 0 && ie >= 0 && Math.abs(x(ir) - x(ie)) < 60 && Math.abs(yr - ye) < 16) { if (yr <= ye) { yr -= 8; ye += 8; } else { yr += 8; ye -= 8; } }
+  if (ir >= 0) s += `<text class="etq" x="${x(ir) + 10}" y="${yr + 4}">Real ${pct(d.meses[ir].real)}</text>`;
+  if (ie >= 0) s += `<text class="etq" x="${x(ie) + 10}" y="${ye + 4}">Esperado</text>`;
+  // zonas para el tooltip (más anchas que los puntos)
+  const ancho = n === 1 ? W - iz - de : (W - iz - de) / (n - 1);
+  d.meses.forEach((m, i) => s += `<rect data-i="${i}" x="${x(i) - ancho / 2}" y="${ar}" width="${ancho}" height="${H - ar - ab}" fill="transparent"/>`);
+  s += `<line id="cruz" y1="${ar}" y2="${H - ab}" stroke="var(--suave)" stroke-width="1" visibility="hidden"/></svg>`;
+  $("grafico").innerHTML = s + `<div class="tip" id="tip" hidden></div>`;
+  const svg = $("grafico").querySelector("svg"), tip = $("tip"), cruz = svg.querySelector("#cruz");
+  svg.addEventListener("pointermove", (e) => {
+    const r = e.target.closest("rect[data-i]"); if (!r) return;
+    const m = d.meses[r.dataset.i], px = x(Number(r.dataset.i));
+    cruz.setAttribute("x1", px); cruz.setAttribute("x2", px); cruz.setAttribute("visibility", "visible");
+    tip.innerHTML = `<b>${mesTxt(m.mes)}${m.parcial ? " (hasta hoy)" : ""}</b>` +
+      (m.real !== null ? `<div><i style="background:var(--serie-real)"></i>Real: <b style="display:inline">${pct(m.real)}</b> (${m.aprobados} aprobados)</div><div class="suave">Aprobaron en el mes: ${m.aprobados_mes}</div>` : `<div class="suave">Todavía no llegó</div>`) +
+      (m.esperado !== null ? `<div><i style="background:var(--serie-esp)"></i>Esperado: ${pct(m.esperado)}</div>` : "");
+    tip.hidden = false;
+    const caja = $("grafico").getBoundingClientRect(), escala = caja.width / W;
+    tip.style.left = Math.min(caja.width - tip.offsetWidth, Math.max(0, px * escala + 12)) + "px";
+    tip.style.top = "10px";
+  });
+  svg.addEventListener("pointerleave", () => { tip.hidden = true; cruz.setAttribute("visibility", "hidden"); });
+}
+let redibujo;
+window.addEventListener("resize", () => { clearTimeout(redibujo); redibujo = setTimeout(() => ultimo && grafico(ultimo), 150); });
+$("f-curso").onchange = cargar;
+if ($("f-transporte")) $("f-transporte").onchange = cargar;
+if ($("f-curso").value) cargar();
+</script>
+{% endraw %}
+{% endblock %}

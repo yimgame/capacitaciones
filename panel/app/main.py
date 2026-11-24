@@ -688,6 +688,23 @@ def cumplimiento_api(req: Request, transporte: str = "", curso: str = "", estado
             "reglas": [r for r in padron.reglas() if not _solo_transporte(u) or r["transporte_id"] == _solo_transporte(u)]}
 
 
+@app.get(PREFIJO + "/avance", response_class=HTMLResponse)
+def avance_pagina(req: Request):
+    u = _requiere(req)
+    return plantillas.TemplateResponse(req, "avance.html", {
+        "u": u, "cursos": cursos.listar(),
+        "transportes": [t for t in padron.transportes() if not _solo_transporte(u) or t["id"] == _solo_transporte(u)]})
+
+
+@app.get(PREFIJO + "/api/avance")
+def avance_api(req: Request, curso: str = "", transporte: str = ""):
+    u = _requiere(req)
+    c = cursos.obtener(curso)
+    if not c:
+        raise HTTPException(404, "No existe ese curso")
+    return padron.avance(c, examen.resultados(), transporte_id=_solo_transporte(u) or _int(transporte))
+
+
 @app.get(PREFIJO + "/cumplimiento.csv")
 def cumplimiento_csv(req: Request, transporte: str = "", curso: str = "", estado: str = "", jrt: str = ""):
     import csv

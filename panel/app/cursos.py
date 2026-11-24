@@ -148,6 +148,7 @@ _NOMBRES = {"titulo": "título", "descripcion": "descripción", "acceso": "quié
             "vigencia_meses": "vigencia", "vence_fecha": "fecha de vencimiento", "vigencia_desde": "cómo se cuenta la vigencia",
             "atencion": "control de atención", "mostrar_camara": "mostrar cámara", "examen": "evaluación",
             "min_segundos": "tiempo mínimo", "orden": "orden", "preguntas_por_examen": "preguntas por examen",
+            "periodo_inicio": "fecha de inicio", "periodo_fin": "fecha de fin",
             "diploma": "diploma", "diploma_emisor": "quién emite el diploma", "diploma_firma_nombre": "firma del diploma",
             "aprobacion": "% para aprobar"}
 
@@ -301,6 +302,13 @@ def actualizar(slug, f):
         pass
     curso["material"] = texto_a_material(f.get("material", ""))
     curso["diploma"] = f.get("diploma") == "1"
+    for k in ("periodo_inicio", "periodo_fin"):         # período del curso (para el avance mes a mes)
+        try:
+            curso[k] = date.fromisoformat(str(f.get(k) or "")).isoformat()
+        except ValueError:
+            curso[k] = ""
+    if curso["periodo_inicio"] and curso["periodo_fin"] and curso["periodo_fin"] <= curso["periodo_inicio"]:
+        raise ValueError("La fecha de fin del curso tiene que ser posterior a la de inicio.")
     for k in ("diploma_emisor", "diploma_firma_nombre", "diploma_firma_cargo"):
         curso[k] = " ".join(str(f.get(k) or "").split())[:80]
     # títulos y orden de los videos (v_titulo_<id>, v_orden_<id>)

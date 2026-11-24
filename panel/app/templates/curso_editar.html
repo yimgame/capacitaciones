@@ -48,6 +48,10 @@
     </select>
       <span class="suave" id="corte-txt">{% if corte %}Con la versión v{{ c.version or 1 }} vence el <b>{{ corte.strftime('%d/%m/%Y') }}</b>: lo aprobado antes de esa fecha vence ese día.{% endif %}</span></label>
   </div>
+  <div class="dos-col">
+    <label>Inicio del curso <span class="suave">(para el avance mes a mes)</span><input type="date" name="periodo_inicio" value="{{ c.periodo_inicio or '' }}"></label>
+    <label>Fin del curso <span class="suave">(para esa fecha tendrían que haberlo aprobado todos)</span><input type="date" name="periodo_fin" value="{{ c.periodo_fin or '' }}"></label>
+  </div>
   <label class="switch"><input type="checkbox" name="habilitado" value="1" {{ 'checked' if c.habilitado }}> Curso habilitado (visible para los choferes)</label>
   <label class="switch"><input type="checkbox" name="mostrar_camara" value="1" {{ 'checked' if c.mostrar_camara }}> Mostrar al chofer la cámara y el indicador de atención (destildado: no ve nada, pero se mide igual)</label>
   <label class="switch"><input type="checkbox" name="examen" value="1" {{ 'checked' if c.examen }}> Evaluación al final
