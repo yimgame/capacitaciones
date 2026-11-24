@@ -96,9 +96,25 @@ def inicio(b):
 
     padron.guardar_celular(dni, celular)          # si está en el padrón sin celular, queda el que escribió
     banco = cursos.banco_del_curso(curso)
-    n = curso.get("preguntas_por_examen", cursos.POR_EXAMEN) if curso.get("examen") else 0
-    elegidas = [{"pregunta": q["pregunta"], "correcta": q["correcta"],
-                 "opciones": _mezclar([q["correcta"], *q["incorrectas"]])} for q in _mezclar(banco)[:n]]
+    armar = lambda q, paso=None: {"pregunta": q["pregunta"], "correcta": q["correcta"], "paso": paso,
+                                  "opciones": _mezclar([q["correcta"], *q["incorrectas"]])}
+    if curso.get("flujo"):
+        # Flujo: cada paso de preguntas trae las suyas (elegidas o al azar), sin repetir entre pasos.
+        por_id = {cursos._id_pregunta(q): q for q in banco}
+        usadas = {i for x in curso["flujo"] if x["tipo"] == "preguntas" for i in x.get("ids", [])}
+        resto = [q for q in _mezclar(banco) if cursos._id_pregunta(q) not in usadas]
+        elegidas = []
+        for x in curso["flujo"]:
+            if x["tipo"] != "preguntas":
+                continue
+            if x.get("modo") == "elegidas":
+                elegidas += [armar(por_id[i], x["id"]) for i in x.get("ids", []) if i in por_id]
+            else:
+                toma, resto = resto[:x.get("cantidad", 5)], resto[x.get("cantidad", 5):]
+                elegidas += [armar(q, x["id"]) for q in toma]
+    else:
+        n = curso.get("preguntas_por_examen", cursos.POR_EXAMEN) if curso.get("examen") else 0
+        elegidas = [armar(q) for q in _mezclar(banco)[:n]]
     sesion = secrets.token_hex(16)
     ahora = time.time()
     with closing(cursos.con()) as c, c:
@@ -109,7 +125,8 @@ def inicio(b):
                    json.dumps(elegidas, ensure_ascii=False), curso.get("aprobacion", cursos.APROBACION),
                    curso.get("version", 1)))
     return {"ok": True, "sesion": sesion,
-            "preguntas": [{"n": i, "pregunta": p["pregunta"], "opciones": p["opciones"]} for i, p in enumerate(elegidas)]}
+            "preguntas": [{"n": i, "pregunta": p["pregunta"], "opciones": p["opciones"], "paso": p.get("paso")}
+                          for i, p in enumerate(elegidas)]}
 
 
 def fin(b):

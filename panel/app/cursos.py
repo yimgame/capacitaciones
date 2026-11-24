@@ -24,7 +24,8 @@ RESERVADOS = {"panel", "api", "recursos", "static", "index", "curso", "favicon.i
 # Campos de control (no son contenido del curso): no cuentan como "cambio" ni se restauran.
 META = ("version", "version_fecha", "version_usuario", "revision", "modificado", "modificado_por")
 EXTENSIONES = {".mp4": "video", ".webm": "video", ".m4v": "video", ".mov": "video",
-               ".pdf": "documento", ".jpg": "imagen", ".jpeg": "imagen", ".png": "imagen", ".webp": "imagen"}
+               ".pdf": "documento", ".jpg": "imagen", ".jpeg": "imagen", ".png": "imagen", ".webp": "imagen",
+               ".mp3": "audio", ".m4a": "audio", ".aac": "audio", ".ogg": "audio", ".opus": "audio", ".wav": "audio"}
 ACCESO = {"abierto": "Abierto: lo puede hacer cualquiera desde la portada",
           "asignados": "Solo choferes asignados (entran con DNI y fecha de nacimiento)"}
 VIGENCIA_FECHA = -1          # vigencia_meses = -1: vence en una fecha fija (vence_fecha)
@@ -64,7 +65,8 @@ def _base(slug, titulo, descripcion, orden):
     return {"slug": slug, "titulo": titulo, "descripcion": descripcion, "habilitado": True, "orden": orden,
             "material": json.loads(json.dumps(MATERIAL_LEY)), "videos": [], "min_segundos": 60,
             "atencion": "elegir", "mostrar_camara": True, "examen": True,
-            "preguntas": [], "preguntas_por_examen": 10, "aprobacion": 70, "acceso": "abierto", "vigencia_meses": 0}
+            "preguntas": [], "preguntas_por_examen": 10, "aprobacion": 70, "acceso": "abierto", "vigencia_meses": 0,
+            "flujo": [], "idioma_original": "Español"}
 
 
 INICIALES = [
@@ -164,6 +166,11 @@ def resumen_cambios(a, b):
         out.append(f"Material editado ({n(a.get('material'))} → {n(b.get('material'))} puntos)")
     va = {v["id"]: v for v in a.get("videos", [])}
     vb = {v["id"]: v for v in b.get("videos", [])}
+    if (a.get("flujo") or []) != (b.get("flujo") or []):
+        out.append(f"Flujo editado ({len(a.get('flujo') or [])} → {len(b.get('flujo') or [])} pasos)")
+    aud = lambda d: {(v["id"], x["id"]) for v in d.values() for x in v.get("audios") or []}
+    if aud(va) != aud(vb):
+        out.append("Cambió audios de idiomas")
     out += [f"Agregó «{vb[i]['titulo']}»" for i in vb if i not in va]
     out += [f"Quitó «{va[i]['titulo']}»" for i in va if i not in vb]
     if any(i in va and (va[i].get("titulo"), va[i].get("orden")) != (v.get("titulo"), v.get("orden")) for i, v in vb.items()):
@@ -224,6 +231,8 @@ def crear(slug, titulo, copiar_de=""):
         raise ValueError(f"Ya existe un curso con la dirección /{slug}.")
     base = obtener(copiar_de) if copiar_de else None
     curso = {k: v for k, v in base.items() if k not in META} if base else _base(slug, titulo or slug, "", 99)
+    if not base:
+        curso["atencion"] = "camara"           # reunión 2026-11-18: entra directo con control de cámara
     curso.update(slug=slug, titulo=(titulo or curso["titulo"]).strip()[:120], videos=[] if not base else
                  [dict(v) for v in base.get("videos", []) if v.get("tipo") == "youtube"], habilitado=False,
                  orden=len(listar()) + 1)
@@ -341,6 +350,9 @@ def agregar_youtube(slug, url, titulo):
 
 def quitar_recurso(slug, vid):
     curso = obtener(slug)
+    usado = [p.get("titulo") or "sin título" for p in curso.get("flujo") or [] if p.get("recurso") == vid]
+    if usado:
+        raise ValueError("Ese recurso se usa en el flujo (paso «" + "», «".join(usado) + "»). Cambialo o sacalo del flujo primero.")
     sacado = next((v for v in curso["videos"] if v["id"] == vid), None)
     curso["videos"] = [v for v in curso["videos"] if v["id"] != vid]
     guardar(curso)
@@ -360,16 +372,169 @@ def agregar_link(slug, url, titulo):
     return curso
 
 
+def _recurso_publico(v):
+    return {"titulo": v["titulo"], "tipo": v["tipo"],
+            **({"youtube": v["youtube"]} if v["tipo"] == "youtube" else
+               {"url": v["url"]} if v["tipo"] == "link" else {"url": "/recursos/" + v["archivo"]}),
+            **({"audios": [{"idioma": x["idioma"], "url": "/recursos/" + x["archivo"]} for x in v["audios"]]}
+               if v.get("audios") else {})}
+
+
 def publico(curso):
-    """Lo que ve la página del chofer (sin campos internos)."""
+    """Lo que ve la página del chofer (sin campos internos). Con flujo: los pasos en orden, cada uno con su recurso
+    (las preguntas NO van acá: las arma examen.inicio sin las respuestas)."""
+    recursos = {v["id"]: v for v in curso.get("videos", [])}
+    flujo = []
+    for p in curso.get("flujo") or []:
+        paso = {k: p[k] for k in ("id", "tipo", "titulo", "avance", "segundos") if k in p}
+        if p["tipo"] == "recurso":
+            if p.get("recurso") not in recursos:
+                continue
+            paso["recurso"] = _recurso_publico(recursos[p["recurso"]])
+        elif p["tipo"] == "material":
+            paso["material"] = texto_a_material(p.get("texto", ""))
+        flujo.append(paso)
+    idiomas = [curso.get("idioma_original") or "Español"]
+    for p in curso.get("flujo") or []:
+        for x in (recursos.get(p.get("recurso")) or {}).get("audios") or []:
+            if x["idioma"] not in idiomas:
+                idiomas.append(x["idioma"])
     return {k: curso[k] for k in ("slug", "titulo", "descripcion", "material", "min_segundos", "atencion",
                                   "mostrar_camara", "examen")} | {
         "aprobacion": curso.get("aprobacion", APROBACION), "acceso": curso.get("acceso", "abierto"),
-        "version": curso.get("version", 1),
-        "videos": [{"titulo": v["titulo"], "tipo": v["tipo"],
-                    **({"youtube": v["youtube"]} if v["tipo"] == "youtube" else
-                       {"url": v["url"]} if v["tipo"] == "link" else {"url": "/recursos/" + v["archivo"]})}
-                   for v in curso.get("videos", [])]}
+        "version": curso.get("version", 1), "flujo": flujo, "idiomas": idiomas,
+        "videos": [_recurso_publico(v) for v in curso.get("videos", [])]}
+
+
+# ------------------------------------------------------------------ flujo del curso (línea de tiempo)
+# Cada paso: {"id", "tipo": recurso|material|preguntas, "titulo", "avance", "segundos",
+#             "recurso": id de curso.videos (tipo recurso), "texto": material como texto (tipo material),
+#             "modo": azar|elegidas, "cantidad": N, "ids": [ids de preguntas] (tipo preguntas)}
+# avance: libre (hasta que hace clic en Siguiente) | minimo (Siguiente se habilita a los N s) |
+#         auto (pasa solo a los N s) | fin_video (cuando termina el video, sin poder adelantarlo)
+AVANCE = {"libre": "Hasta que hace clic en «Siguiente»", "minimo": "Tiempo mínimo, después «Siguiente»",
+          "auto": "Pasa solo después del tiempo", "fin_video": "Cuando termina el video (sin adelantar)"}
+MAX_PASOS = 60
+
+
+def _id_pregunta(q):
+    return str(q.get("id"))
+
+
+def limpiar_flujo(lista, curso):
+    if not isinstance(lista, list):
+        raise ValueError("Formato inválido.")
+    if len(lista) > MAX_PASOS:
+        raise ValueError(f"Máximo {MAX_PASOS} pasos.")
+    recursos = {v["id"]: v for v in curso.get("videos", [])}
+    banco = {_id_pregunta(q) for q in banco_del_curso(curso)}
+    salida, errores, ids = [], [], set()
+    for n, p in enumerate(lista, start=1):
+        p = p if isinstance(p, dict) else {}
+        tipo = p.get("tipo")
+        if tipo not in ("recurso", "material", "preguntas"):
+            errores.append(f"Paso {n}: tipo inválido.")
+            continue
+        pid = str(p.get("id") or "")
+        if not re.fullmatch(r"[a-z0-9-]{1,40}", pid) or pid in ids:
+            pid = f"p{int(time.time() * 1000):x}{n}"
+        ids.add(pid)
+        avance = p.get("avance") if p.get("avance") in AVANCE else "libre"
+        try:
+            segundos = max(0, min(7200, int(p.get("segundos") or 0)))
+        except (TypeError, ValueError):
+            segundos = 0
+        paso = {"id": pid, "tipo": tipo, "titulo": " ".join(str(p.get("titulo") or "").split())[:120]}
+        if tipo == "recurso":
+            r = recursos.get(p.get("recurso"))
+            if not r:
+                errores.append(f"Paso {n}: elegí qué video o archivo muestra.")
+                continue
+            paso["recurso"] = r["id"]                # sin título propio: se muestra el del recurso
+            if avance == "fin_video" and r["tipo"] not in ("video", "audio"):
+                avance = "minimo" if segundos else "libre"
+        elif tipo == "material":
+            paso["texto"] = str(p.get("texto") or "")[:20000]
+            paso["titulo"] = paso["titulo"] or "Material de estudio"
+            if not texto_a_material(paso["texto"]):
+                errores.append(f"Paso {n}: el material está vacío.")
+            if avance == "fin_video":
+                avance = "libre"
+        else:
+            paso["modo"] = "elegidas" if p.get("modo") == "elegidas" else "azar"
+            if paso["modo"] == "elegidas":
+                paso["ids"] = [str(i) for i in (p.get("ids") or []) if str(i) in banco][:50]
+                if not paso["ids"]:
+                    errores.append(f"Paso {n}: marcá qué preguntas van.")
+            else:
+                try:
+                    paso["cantidad"] = max(1, min(50, int(p.get("cantidad") or 5)))
+                except (TypeError, ValueError):
+                    paso["cantidad"] = 5
+            avance = "libre"                       # las preguntas avanzan cuando contestó todas
+            paso["titulo"] = paso["titulo"] or "Preguntas"
+        if avance in ("minimo", "auto") and not segundos:
+            avance = "libre"
+        paso.update(avance=avance, segundos=segundos if avance in ("minimo", "auto") else 0)
+        salida.append(paso)
+    if errores:
+        raise ValueError(" ".join(errores[:8]))
+    azar = sum(p.get("cantidad", 0) for p in salida if p["tipo"] == "preguntas" and p["modo"] == "azar")
+    fijas = {i for p in salida if p["tipo"] == "preguntas" for i in p.get("ids", [])}
+    if azar + len(fijas) > len(banco):
+        raise ValueError(f"El flujo pide {azar + len(fijas)} preguntas y el curso tiene {len(banco)}. "
+                         "Bajá la cantidad o cargá más preguntas.")
+    return salida
+
+
+def guardar_flujo(slug, datos):
+    curso = obtener(slug)
+    if not curso:
+        raise ValueError("No existe ese curso.")
+    curso["flujo"] = limpiar_flujo(datos.get("flujo"), curso)
+    original = " ".join(str(datos.get("idioma_original") or "").split())[:30]
+    if original:
+        curso["idioma_original"] = original
+    guardar(curso, nueva_version=bool(datos.get("nueva_version")))
+    return curso
+
+
+def flujo_desde_actual(curso):
+    """Arma un flujo con lo que el curso ya tiene: cada recurso, después el material y al final las preguntas."""
+    pasos = [{"id": f"p{i}", "tipo": "recurso", "recurso": v["id"], "titulo": v["titulo"],
+              "avance": "fin_video" if v["tipo"] == "video" else "libre", "segundos": 0}
+             for i, v in enumerate(curso.get("videos", []), start=1)]
+    if curso.get("material"):
+        pasos.append({"id": "pm", "tipo": "material", "titulo": "Material de estudio", "texto": material_a_texto(curso["material"]),
+                      "avance": "minimo" if curso.get("min_segundos") else "libre", "segundos": curso.get("min_segundos") or 0})
+    if curso.get("examen"):
+        pasos.append({"id": "pq", "tipo": "preguntas", "titulo": "Evaluación", "modo": "azar",
+                      "cantidad": min(curso.get("preguntas_por_examen") or POR_EXAMEN, len(banco_del_curso(curso)))})
+    return pasos
+
+
+def agregar_audio(slug, vid, archivo, idioma):
+    """Audio en otro idioma para un video (la página lo reproduce sincronizado, con el video en silencio)."""
+    curso = obtener(slug)
+    v = next((x for x in curso["videos"] if x["id"] == vid), None)
+    if not v or v["tipo"] != "video":
+        raise ValueError("Los audios en otros idiomas se agregan a videos subidos (no a YouTube).")
+    idioma = " ".join((idioma or "").split())[:30]
+    if not idioma:
+        raise ValueError("Escribí el idioma del audio.")
+    v["audios"] = [x for x in v.get("audios") or [] if x["idioma"].lower() != idioma.lower()]
+    v["audios"].append({"id": f"{int(time.time() * 1000):x}", "idioma": idioma, "archivo": f"{slug}/{archivo}"})
+    guardar(curso)
+    return curso
+
+
+def quitar_audio(slug, vid, aid):
+    curso = obtener(slug)
+    for v in curso["videos"]:
+        if v["id"] == vid:
+            v["audios"] = [x for x in v.get("audios") or [] if x["id"] != aid]
+    guardar(curso)
+    return curso
 
 
 # ------------------------------------------------------------------ evaluación (preguntas propias del curso)

@@ -36,6 +36,7 @@ a.boton { display:block; text-align:center; font-weight:600; padding:12px; borde
           color:var(--acento); text-decoration:none; margin:8px 0 14px; }
 .material a { color:var(--acento); }
 #preview { width:96px; height:72px; border-radius:8px; object-fit:cover; transform:scaleX(-1); background:#000; }
+.camara.oculto { display:none; }
 .camara { position:sticky; top:8px; z-index:5; display:flex; gap:10px; align-items:center; background:var(--panel); border:1px solid var(--borde); border-radius:12px; padding:8px; margin-bottom:12px; }
 .estado { font-weight:600; } .estado.ok { color:var(--ok); } .estado.mal { color:var(--aviso); }
 .barra { height:6px; background:var(--borde); border-radius:3px; overflow:hidden; margin-top:6px; } .barra > div { height:100%; background:var(--ok); width:0; transition:width .4s; }
@@ -48,6 +49,11 @@ a.boton { display:block; text-align:center; font-weight:600; padding:12px; borde
 .opcion:hover { background:var(--bg); } .opcion input { width:20px; height:20px; flex:none; margin-top:3px; }
 .res-ok { color:var(--ok); } .res-mal { color:var(--mal); }
 .falla { border:1px solid var(--borde); border-radius:8px; padding:10px; margin:8px 0; font-size:15px; }
+.flujo-cab { display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:14px; color:var(--suave); }
+.flujo-cab select { font:inherit; padding:6px 8px; border-radius:8px; border:1px solid var(--borde); background:var(--bg); color:var(--txt); }
+.progreso { height:6px; background:var(--borde); border-radius:3px; overflow:hidden; margin:8px 0 14px; } .progreso > div { height:100%; background:var(--acento); width:0; transition:width .3s; }
+.puntos { display:flex; gap:4px; margin-top:6px; } .puntos span { flex:1; height:4px; border-radius:2px; background:var(--borde); } .puntos span.hecho { background:var(--ok); } .puntos span.actual { background:var(--acento); }
+.nav { display:flex; gap:10px; } .nav button { margin-top:14px; } .nav .sec { flex:0 0 34%; background:var(--bg); color:var(--txt); border:1px solid var(--borde); }
 .metricas { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; } .metricas div { background:var(--bg); border-radius:8px; padding:10px; } .metricas b { display:block; font-size:20px; }
 </style>
 </head>
@@ -99,16 +105,18 @@ a.boton { display:block; text-align:center; font-weight:600; padding:12px; borde
       <a href="#" id="link-sin">Hacela sin control de atención</a>.</p>
   </section>
 
-  <!-- 3. Estudio -->
-  <section id="paso-estudio" class="oculto">
-    <div class="camara" id="barra-camara">
-      <video id="preview" playsinline muted></video>
-      <div style="flex:1">
-        <div id="estado" class="estado">Preparando cámara…</div>
-        <div class="suave" id="estado-detalle">Ubicá el celular de frente, con tu cara visible.</div>
-        <div class="barra"><div id="barra-atencion"></div></div>
-      </div>
+  <!-- barra de la cámara: queda arriba durante el estudio o el flujo -->
+  <div class="camara oculto" id="barra-camara">
+    <video id="preview" playsinline muted></video>
+    <div style="flex:1">
+      <div id="estado" class="estado">Preparando cámara…</div>
+      <div class="suave" id="estado-detalle">Ubicá el celular de frente, con tu cara visible.</div>
+      <div class="barra"><div id="barra-atencion"></div></div>
     </div>
+  </div>
+
+  <!-- 3. Estudio (modo clásico: todo junto y la evaluación al final) -->
+  <section id="paso-estudio" class="oculto">
     <div class="panel">
       <h2>Material de estudio</h2>
       <div id="videos"></div>
@@ -116,6 +124,18 @@ a.boton { display:block; text-align:center; font-weight:600; padding:12px; borde
       <p class="suave" id="tiempo-min"></p>
       <button id="btn-estudio" disabled>Terminé, ir a la evaluación</button>
     </div>
+  </section>
+
+  <!-- 3b. Flujo: un paso por vez (video, material, preguntas…) -->
+  <section id="paso-flujo" class="panel oculto">
+    <div class="flujo-cab"><span id="f-paso"></span>
+      <label class="oculto" id="f-idioma-box" style="margin:0;font-weight:400">🔊 <select id="f-idioma"></select></label></div>
+    <div class="puntos" id="f-puntos"></div>
+    <h2 id="f-titulo" style="margin-top:14px"></h2>
+    <div id="f-cuerpo"></div>
+    <p class="suave" id="f-espera"></p>
+    <div class="error" id="f-error"></div>
+    <div class="nav"><button class="sec" id="f-atras">← Anterior</button><button id="f-sig">Siguiente →</button></div>
   </section>
 
   <!-- 4. Examen -->
@@ -173,6 +193,7 @@ const TOKEN = leer("chofer_token");
   $("titulo-curso").textContent = CURSO.titulo;
   $("desc-curso").textContent = CURSO.descripcion || "";
   if (!CURSO.mostrar_camara) $("barra-camara").classList.add("invisible");   // ni la imagen ni el indicador
+  if (CURSO.flujo && CURSO.flujo.length) CURSO.examen = CURSO.flujo.some((p) => p.tipo === "preguntas");
   if (!CURSO.examen) $("btn-estudio").textContent = "Terminé la capacitación";
   if (TOKEN) {
     document.querySelectorAll("#paso-registro label, #paso-registro input").forEach((x) => x.classList.add("oculto"));
@@ -220,6 +241,10 @@ async function empezarSinCamara() {
              mostrar("paso-modo"); return; }
   estado.sesion = datos.sesion; estado.preguntas = datos.preguntas;
   $("barra-camara").classList.add("oculto");
+  empezarEstudio();
+}
+function empezarEstudio() {
+  if (CURSO.flujo && CURSO.flujo.length) { armarFlujo(); return; }
   armarEstudio(); mostrar("paso-estudio");
 }
 
@@ -232,13 +257,15 @@ $("btn-consent").onclick = async () => {
                                                 dispositivo: navigator.userAgent.slice(0, 120) });
   if (!ok) { $("err-consent").textContent = "No se pudo iniciar: " + ((datos.errores || []).join(", ") || "probá de nuevo"); $("btn-consent").disabled = false; return; }
   estado.sesion = datos.sesion; estado.preguntas = datos.preguntas;
+  $("barra-camara").classList.remove("oculto");      // visible antes de arrancar: oculta, algunos navegadores no entregan cuadros
   try {
     await iniciarCamara();
   } catch (e) {
+    $("barra-camara").classList.add("oculto");
     $("err-consent").textContent = "No se pudo usar la cámara (" + (e.name || e.message) + "). Revisá los permisos del navegador o usá la versión sin control de atención.";
     $("btn-consent").disabled = false; return;
   }
-  armarEstudio(); mostrar("paso-estudio");
+  empezarEstudio();
 };
 
 // ----------------------------------------------------------------- 3. atención (todo local)
@@ -308,6 +335,7 @@ document.addEventListener("visibilitychange", () => {
 });
 function apagarCamara() {
   at.activo = false;
+  $("barra-camara").classList.add("oculto");
   if (at.stream) at.stream.getTracks().forEach((tr) => tr.stop());
   if (at.detector) at.detector.close();
 }
@@ -326,19 +354,21 @@ function conLinks(t) {
   }
   return out + esc(t.slice(i));
 }
-function armarEstudio() {
-  estado.inicioEstudio = Date.now();
-  $("videos").innerHTML = CURSO.videos.map((v) => {
-    const t = `<h3>${esc(v.titulo)}</h3>`;
+function recursoHtml(v, t = `<h3>${esc(v.titulo)}</h3>`) {
     if (v.tipo === "youtube") return t + `<div class="video"><iframe src="https://www.youtube-nocookie.com/embed/${esc(v.youtube)}" allow="encrypted-media; picture-in-picture" allowfullscreen></iframe></div>`;
     if (v.tipo === "video") return t + `<div class="video"><video src="${esc(v.url)}" controls playsinline preload="metadata"></video></div>`;
+    if (v.tipo === "audio") return t + `<div class="recurso"><audio src="${esc(v.url)}" controls preload="metadata" style="width:100%"></audio></div>`;
     if (v.tipo === "imagen") return t + `<div class="recurso"><img src="${esc(v.url)}" alt="${esc(v.titulo)}" loading="lazy"></div>`;
     if (v.tipo === "link") return `<a class="boton" href="${esc(v.url)}" target="_blank" rel="noopener">🔗 ${esc(v.titulo)} ↗</a>`;
     // PDF: en la compu se ve acá mismo; en el celular, botón para abrirlo
     return t + (MOVIL ? "" : `<div class="pdf"><iframe src="${esc(v.url)}#view=FitH" title="${esc(v.titulo)}" loading="lazy"></iframe></div>`) +
       `<a class="boton" href="${esc(v.url)}" target="_blank" rel="noopener">📄 Abrir «${esc(v.titulo)}»${MOVIL ? "" : " en pantalla completa"} ↗</a>`;
-  }).join("");
-  $("material").innerHTML = CURSO.material.map((s) => `<h3>${conLinks(s.titulo)}</h3><ul>${s.items.map((i) => `<li>${conLinks(i)}</li>`).join("")}</ul>`).join("");
+}
+const materialHtml = (m) => m.map((s) => `<h3>${conLinks(s.titulo)}</h3><ul>${s.items.map((i) => `<li>${conLinks(i)}</li>`).join("")}</ul>`).join("");
+function armarEstudio() {
+  estado.inicioEstudio = Date.now();
+  $("videos").innerHTML = CURSO.videos.map((v) => recursoHtml(v)).join("");
+  $("material").innerHTML = materialHtml(CURSO.material);
   const fin = Date.now() + (CURSO.min_segundos || 0) * 1000;
   const tic = setInterval(() => {
     const falta = Math.ceil((fin - Date.now()) / 1000);
@@ -346,16 +376,121 @@ function armarEstudio() {
     else { $("tiempo-min").textContent = ""; $("btn-estudio").disabled = false; clearInterval(tic); }
   }, 500);
 }
-$("btn-estudio").onclick = () => {
-  if (!CURSO.examen) $("btn-estudio").disabled = true;
+function cerrarAtencion() {
   estado.atencion = estado.modo === "camara"
     ? { pct: porcentaje(), distracciones: at.distracciones, salidas: at.salidas,
         segundos: Math.round(at.total), segundosSinAtencion: Math.round(at.sinAtencion) }
     : { segundos: Math.round((Date.now() - estado.inicioEstudio) / 1000) };
   apagarCamara();
+}
+$("btn-estudio").onclick = () => {
+  if (!CURSO.examen) $("btn-estudio").disabled = true;
+  cerrarAtencion();
   if (!CURSO.examen) return enviarFin({});
   armarExamen(); mostrar("paso-examen");
 };
+
+// ----------------------------------------------------------------- 3b. flujo (paso por paso)
+const fl = { i: 0, hecho: {}, visto: {}, resp: {}, timer: null, idioma: "" };
+function armarFlujo() {
+  estado.inicioEstudio = Date.now();
+  const idiomas = CURSO.idiomas || [];
+  if (idiomas.length > 1) {
+    $("f-idioma").innerHTML = idiomas.map((x) => `<option>${esc(x)}</option>`).join("");
+    fl.idioma = leer("curso_idioma") && idiomas.includes(leer("curso_idioma")) ? leer("curso_idioma") : idiomas[0];
+    $("f-idioma").value = fl.idioma; $("f-idioma-box").classList.remove("oculto");
+  }
+  mostrar("paso-flujo"); verPaso(0);
+}
+$("f-idioma").onchange = () => {
+  fl.idioma = $("f-idioma").value; try { sessionStorage.setItem("curso_idioma", fl.idioma); } catch {}
+  const v = document.querySelector("#f-cuerpo video"); const t = v ? v.currentTime : 0;
+  verPaso(fl.i, t);
+};
+function frenarMedios() {
+  document.querySelectorAll("#f-cuerpo video, #f-cuerpo audio").forEach((m) => { try { m.pause(); } catch {} });
+  clearInterval(fl.timer); fl.timer = null;
+}
+const preguntasDe = (p) => estado.preguntas.filter((q) => q.paso === p.id);
+function verPaso(i, desde = 0) {
+  frenarMedios();
+  const pasos = CURSO.flujo, p = pasos[i]; fl.i = i;
+  $("f-paso").textContent = `Paso ${i + 1} de ${pasos.length}`;
+  $("f-puntos").innerHTML = pasos.map((x, k) => `<span class="${k === i ? "actual" : fl.hecho[x.id] ? "hecho" : ""}"></span>`).join("");
+  $("f-titulo").textContent = p.titulo || (p.recurso && p.recurso.titulo) || "";
+  $("f-error").textContent = ""; $("f-espera").textContent = "";
+  $("f-atras").classList.toggle("oculto", i === 0);
+  $("f-sig").textContent = i === pasos.length - 1 ? (CURSO.examen ? "Enviar y terminar ✔" : "Terminar ✔") : "Siguiente →";
+  let h = "";
+  if (p.tipo === "recurso") h = recursoHtml(p.recurso, "");
+  else if (p.tipo === "material") h = `<div class="material">${materialHtml(p.material)}</div>`;
+  else h = preguntasDe(p).map((q, k) => `<div class="pregunta"><p>${k + 1}. ${esc(q.pregunta)}</p>` +
+    q.opciones.map((o) => `<label class="opcion"><input type="radio" name="p${q.n}" value="${esc(o)}" ${fl.resp[q.n] === o ? "checked" : ""}> <span>${esc(o)}</span></label>`).join("") +
+    `</div>`).join("");
+  $("f-cuerpo").innerHTML = h;
+  window.scrollTo(0, 0);
+  // ¿cuándo se habilita «Siguiente»?
+  const sig = $("f-sig"), listo = () => { fl.hecho[p.id] = true; sig.disabled = false; $("f-espera").textContent = ""; };
+  sig.disabled = !fl.hecho[p.id];
+  if (p.tipo === "preguntas") {
+    const faltan = () => preguntasDe(p).filter((q) => fl.resp[q.n] === undefined).length;
+    const revisar = () => { const n = faltan(); sig.disabled = n > 0; $("f-espera").textContent = n ? `Te falta responder ${n} pregunta(s).` : ""; };
+    $("f-cuerpo").onchange = (e) => { if (e.target.name) { fl.resp[e.target.name.slice(1)] = e.target.value; revisar(); } };
+    revisar(); return;
+  }
+  $("f-cuerpo").onchange = null;
+  const medio = $("f-cuerpo").querySelector("video, audio");
+  if (medio) prepararMedio(medio, p, desde);
+  if (fl.hecho[p.id]) return;
+  if (p.avance === "libre") return listo();
+  if (p.avance === "fin_video" && medio) {
+    $("f-espera").textContent = "Mirá el video completo para seguir.";
+    medio.addEventListener("ended", listo); return;
+  }
+  if (p.avance === "fin_video") return listo();          // (sin video: no debería pasar)
+  const fin = Date.now() + (p.segundos || 0) * 1000;
+  const tic = () => {
+    const falta = Math.ceil((fin - Date.now()) / 1000);
+    if (falta > 0) { $("f-espera").textContent = p.avance === "auto" ? `Sigue solo en ${falta} s.` : `Podés seguir en ${falta} s.`; return; }
+    clearInterval(fl.timer); listo();
+    if (p.avance === "auto" && fl.i === i) siguiente();
+  };
+  tic(); fl.timer = setInterval(tic, 500);
+}
+// video: sin adelantar (si el paso pide verlo entero) y con el audio del idioma elegido
+function prepararMedio(m, p, desde) {
+  const r = p.recurso, entero = p.avance === "fin_video" && !fl.hecho[p.id];
+  fl.visto[p.id] = Math.max(fl.visto[p.id] || 0, desde);
+  if (desde) m.addEventListener("loadedmetadata", () => { m.currentTime = desde; }, { once: true });
+  if (entero) {
+    m.addEventListener("timeupdate", () => { if (!m.seeking && m.currentTime > fl.visto[p.id]) fl.visto[p.id] = m.currentTime; });
+    m.addEventListener("seeking", () => { if (m.currentTime > fl.visto[p.id] + 1.5) m.currentTime = fl.visto[p.id]; });
+    m.addEventListener("ratechange", () => { if (m.playbackRate > 1) m.playbackRate = 1; });
+  }
+  const pista = (r.audios || []).find((a) => a.idioma === fl.idioma);
+  if (m.tagName !== "VIDEO" || !pista) return;
+  const a = new Audio(pista.url); a.preload = "auto"; m.muted = true;
+  const sync = () => { if (Math.abs(a.currentTime - m.currentTime) > 0.3) a.currentTime = m.currentTime; };
+  m.addEventListener("play", () => { sync(); a.play().catch(() => {}); });
+  m.addEventListener("playing", () => { sync(); a.play().catch(() => {}); });
+  m.addEventListener("pause", () => a.pause());
+  m.addEventListener("waiting", () => a.pause());
+  m.addEventListener("seeked", sync);
+  m.addEventListener("ended", () => a.pause());
+  m.addEventListener("ratechange", () => { a.playbackRate = m.playbackRate; });
+  m.addEventListener("volumechange", () => { a.volume = m.volume; if (!m.muted) { a.muted = false; m.muted = true; } });
+  const vigilar = setInterval(() => { if (!m.isConnected) { a.pause(); clearInterval(vigilar); } else if (!m.paused) sync(); }, 1000);
+  m.closest(".video").insertAdjacentHTML("afterend", `<p class="suave">🔊 Audio en ${esc(fl.idioma)}</p>`);
+}
+function siguiente() {
+  if (fl.i < CURSO.flujo.length - 1) return verPaso(fl.i + 1);
+  frenarMedios();
+  $("f-sig").disabled = true;
+  cerrarAtencion();
+  enviarFin(fl.resp).then((ok) => { if (!ok) $("f-sig").disabled = false; });
+}
+$("f-sig").onclick = () => { if (!$("f-sig").disabled) siguiente(); };
+$("f-atras").onclick = () => { if (fl.i > 0) verPaso(fl.i - 1); };
 
 // ----------------------------------------------------------------- 4. examen
 function armarExamen() {
@@ -374,11 +509,13 @@ $("btn-examen").onclick = async () => {
 async function enviarFin(resp) {
   const { ok, datos } = await post("/fin", { sesion: estado.sesion, respuestas: resp, atencion: estado.atencion,
                                              dispositivo: navigator.userAgent.slice(0, 120) });
+  if (!ok && CURSO.flujo && CURSO.flujo.length) { $("f-error").textContent = datos.error || "No se pudo enviar. Probá de nuevo."; return false; }
   if (!ok) {
     if (!CURSO.examen) { $("btn-estudio").disabled = false; $("tiempo-min").textContent = "No se pudo registrar. Probá de nuevo."; return; }
     $("err-examen").textContent = datos.error || "No se pudo enviar. Probá de nuevo."; $("btn-examen").disabled = false; return;
   }
   mostrarResultado(datos);
+  return true;
 }
 
 // ----------------------------------------------------------------- 5. resultado

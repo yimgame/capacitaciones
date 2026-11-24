@@ -439,6 +439,58 @@ async def curso_guardar(req: Request, slug: str):
     return RedirectResponse(f"{PREFIJO}/cursos/{slug}?msg=guardado", 303)
 
 
+# ------------------------------------------------------------------ cursos: flujo (línea de tiempo)
+def _flujo_datos(c):
+    return {"flujo": c.get("flujo") or [], "idioma_original": c.get("idioma_original") or "Español",
+            "recursos": c.get("videos", []), "avance": cursos.AVANCE, "version": c.get("version", 1),
+            "revision": c.get("revision"), "modificado": c.get("modificado"),
+            "propuesta": cursos.flujo_desde_actual(c) if not c.get("flujo") else [],
+            "preguntas": [{"id": cursos._id_pregunta(q), "pregunta": q["pregunta"]} for q in cursos.banco_del_curso(c)],
+            "preguntas_propias": bool(c.get("preguntas"))}
+
+
+@app.get(PREFIJO + "/cursos/{slug}/flujo", response_class=HTMLResponse)
+def flujo_editar(req: Request, slug: str):
+    u = _requiere(req, "cursos")
+    c = cursos.obtener(slug)
+    if not c:
+        raise HTTPException(404, "No existe ese curso")
+    return plantillas.TemplateResponse(req, "curso_flujo.html", {
+        "u": u, "c": c, "datos": _flujo_datos(c), "extensiones": ",".join(cursos.EXTENSIONES),
+        "asignados": len(padron.dnis_asignados(slug))})
+
+
+@app.get(PREFIJO + "/api/flujo/{slug}")
+def flujo_leer(req: Request, slug: str):
+    _requiere(req, "cursos")
+    c = cursos.obtener(slug)
+    if not c:
+        raise HTTPException(404, "No existe ese curso")
+    return _flujo_datos(c)
+
+
+@app.post(PREFIJO + "/api/flujo/{slug}")
+async def flujo_guardar(req: Request, slug: str):
+    _mismo_origen(req)
+    u = _requiere(req, "cursos")
+    b = await req.json()
+    try:
+        if b.get("accion") == "quitar_audio":
+            c = cursos.quitar_audio(slug, str(b.get("vid")), str(b.get("aid")))
+        elif b.get("accion") == "youtube":
+            c = cursos.agregar_youtube(slug, str(b.get("url") or ""), str(b.get("titulo") or ""))
+        elif b.get("accion") == "link":
+            c = cursos.agregar_link(slug, str(b.get("url") or ""), str(b.get("titulo") or ""))
+        else:
+            c = cursos.guardar_flujo(slug, b)
+    except ValueError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+    n = 0
+    if b.get("nueva_version") and b.get("recursar_todos"):
+        n = padron.recursar(slug, padron.dnis_asignados(slug), None, u["usuario"])
+    return {"ok": True, "recursados": n, **_flujo_datos(c)}
+
+
 # ------------------------------------------------------------------ cursos: historial de versiones
 @app.get(PREFIJO + "/cursos/{slug}/historial", response_class=HTMLResponse)
 def curso_historial(req: Request, slug: str, faltan: str = ""):
@@ -670,7 +722,8 @@ MAX_ARCHIVO = 4 * 1024 ** 3          # 4 GB por archivo
 
 
 @app.post(PREFIJO + "/api/subir/{slug}")
-async def subir(req: Request, slug: str, nombre: str, offset: int = 0, total: int = 0, titulo: str = ""):
+async def subir(req: Request, slug: str, nombre: str, offset: int = 0, total: int = 0, titulo: str = "",
+                audio_de: str = "", idioma: str = ""):
     """Subida por partes (cada POST trae un pedazo): así pasa por Cloudflare, que corta los cuerpos > 100 MB."""
     _mismo_origen(req)
     _requiere(req, "cursos")
@@ -680,6 +733,10 @@ async def subir(req: Request, slug: str, nombre: str, offset: int = 0, total: in
         archivo = cursos.nombre_seguro(nombre)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    if audio_de and cursos.EXTENSIONES.get(Path(archivo).suffix) != "audio":
+        raise HTTPException(400, "Para un idioma subí un archivo de audio: mp3, m4a, aac, ogg, opus o wav.")
+    if audio_de and not idioma.strip():
+        raise HTTPException(400, "Escribí el idioma del audio.")
     if not 0 < total <= MAX_ARCHIVO:
         raise HTTPException(400, "Archivo vacío o de más de 4 GB")
     carpeta = cursos.RECURSOS / slug
@@ -708,8 +765,15 @@ async def subir(req: Request, slug: str, nombre: str, offset: int = 0, total: in
         final = carpeta / f"{base}-{n}{ext}"
         n += 1
     parcial.rename(final)
-    cursos.agregar_recurso(slug, final.name, titulo.strip()[:120])
-    return {"ok": True, "recibido": recibido, "listo": True, "archivo": final.name}
+    if audio_de:
+        try:
+            cursos.agregar_audio(slug, audio_de, final.name, idioma)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return {"ok": True, "recibido": recibido, "listo": True, "archivo": final.name}
+    c = cursos.agregar_recurso(slug, final.name, titulo.strip()[:120])
+    rid = next((v["id"] for v in c["videos"] if v.get("archivo") == f"{slug}/{final.name}"), None)
+    return {"ok": True, "recibido": recibido, "listo": True, "archivo": final.name, "id": rid}
 
 
 @app.get(PREFIJO + "/salud")

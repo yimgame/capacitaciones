@@ -1,0 +1,446 @@
+{% extends "base.html" %}
+{% block titulo %}Flujo · {{ c.titulo }}{% endblock %}
+{% block contenido %}
+<p><a href="{{ P }}/cursos/{{ c.slug }}">← {{ c.titulo }}</a> · <a href="/{{ c.slug }}" target="_blank">Ver la página del curso ↗</a>
+  · <a href="{{ P }}/cursos/{{ c.slug }}/preguntas">📝 Preguntas del curso</a></p>
+
+<section class="tarjeta">
+  <h1 style="margin-top:0">Flujo del curso <span class="suave">· {{ c.titulo }}</span> <span class="version" id="ver">v{{ c.version or 1 }}</span></h1>
+  <p class="suave" style="margin-top:-6px">El recorrido que hace el chofer, paso por paso: un video, material, preguntas, otro video…
+    Arrastrá los bloques para cambiar el orden y hacé clic en uno para cambiarle el video, el texto, las preguntas o el tiempo.</p>
+  <div id="aviso-clasico" class="aviso" hidden>Este curso todavía usa el <b>modo clásico</b> (todo el material junto y la evaluación al final).
+    <button type="button" class="primario chico" id="b-propuesta">Armar el flujo con lo que ya tiene</button>
+    <span class="suave">o agregá pasos con los botones de abajo. Hasta que guardes, el curso sigue como está.</span></div>
+
+  <div class="herramientas">
+    <button type="button" data-nuevo="recurso">➕ 🎬 Video o archivo</button>
+    <button type="button" data-nuevo="material">➕ 📖 Material</button>
+    <button type="button" data-nuevo="preguntas">➕ 📝 Preguntas</button>
+    <span class="separa"></span>
+    <label class="en-linea">🔊 Idioma del audio original <input id="idioma-original" maxlength="30" style="width:120px"></label>
+  </div>
+
+  <div class="linea-tiempo" id="linea"></div>
+  <p class="suave" id="totales"></p>
+</section>
+
+<div class="dos-paneles">
+  <section class="tarjeta" id="inspector"><p class="suave">Elegí un paso de la línea para editarlo.</p></section>
+
+  <section class="tarjeta">
+    <h2>Biblioteca del curso</h2>
+    <p class="suave">Los videos y archivos del curso. Para cambiar rápido el video de un paso, elegí otro en el paso o tocá «Usar en el paso».</p>
+    <div id="biblioteca"></div>
+    <details class="sub" open><summary>⬆ Subir video o archivo</summary>
+      <p class="suave">mp4 (H.264 es lo más compatible), webm, mov, pdf, jpg, png o audio (mp3, m4a…). Hasta 4 GB, se sube por partes.</p>
+      <label>Archivo<input type="file" id="archivo" accept="{{ extensiones }}"></label>
+      <label>Título que ve el chofer<input id="titulo-archivo" placeholder="Ej. Distracciones al volante"></label>
+      <label class="switch"><input type="checkbox" id="subir-al-flujo" checked> Agregarlo al final del flujo</label>
+      <button type="button" class="primario" id="b-subir">⬆ Subir</button>
+      <div class="barra-subida" hidden id="subida"><div id="subida-barra"></div></div>
+      <p class="suave" id="subida-estado"></p>
+    </details>
+    <details class="sub"><summary>▶️ Video de YouTube o 🔗 link</summary>
+      <label>Link<input id="link-url" placeholder="https://www.youtube.com/watch?v=… o https://…"></label>
+      <label>Título<input id="link-titulo"></label>
+      <button type="button" id="b-link">Agregar</button> <span class="suave" id="link-estado"></span>
+    </details>
+  </section>
+</div>
+
+<section class="tarjeta guardar-barra">
+  <label class="switch"><input type="checkbox" id="nueva-version"> Guardar como <b>versión nueva v{{ (c.version or 1) + 1 }}</b>
+    <span class="suave">(para cambios de contenido)</span></label>
+  <label class="switch" id="recursar-box" hidden><input type="checkbox" id="recursar"> Que los <b>{{ asignados }}</b> chofer(es) asignados lo vuelvan a hacer</label>
+  <div class="fila-form">
+    <button type="button" class="primario" id="b-guardar">💾 Guardar el flujo</button>
+    <button type="button" id="b-clasico" title="Saca el flujo: el curso vuelve a mostrar todo junto y la evaluación al final">Volver al modo clásico</button>
+    <span id="estado-guardado" class="suave"></span>
+  </div>
+</section>
+
+<style>
+.version { font-size:14px; background:var(--azul); color:#fff; border-radius:6px; padding:2px 8px; vertical-align:middle; }
+.herramientas { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:12px 0; }
+.herramientas .separa { flex:1; }
+.en-linea { flex-direction:row; align-items:center; gap:6px; margin:0; }
+.linea-tiempo { display:flex; align-items:stretch; gap:0; overflow-x:auto; padding:14px 4px 18px; border:1px dashed var(--borde);
+  border-radius:12px; background:var(--bg); min-height:150px; scroll-snap-type:x proximity; }
+.nodo { flex:none; align-self:center; width:58px; height:58px; border-radius:50%; display:grid; place-items:center; text-align:center;
+  font-size:11px; font-weight:600; background:var(--tarjeta); border:2px solid var(--borde); color:var(--suave); }
+.flecha { flex:none; align-self:center; width:34px; height:2px; background:var(--suave); position:relative; margin:0 2px; }
+.flecha::after { content:""; position:absolute; right:-1px; top:-5px; border:6px solid transparent; border-left:8px solid var(--suave); border-right:0; }
+.flecha.destino { background:var(--azul); height:4px; } .flecha.destino::after { border-left-color:var(--azul); }
+.bloque { flex:none; scroll-snap-align:center; background:var(--tarjeta); border:2px solid var(--borde); border-top:6px solid var(--c);
+  border-radius:10px; padding:8px 10px; cursor:grab; display:flex; flex-direction:column; gap:4px; min-height:118px; user-select:none; }
+.bloque:hover { border-color:var(--c); }
+.bloque.sel { border-color:var(--c); box-shadow:0 0 0 3px color-mix(in srgb, var(--c) 30%, transparent); }
+.bloque.arrastrando { opacity:.4; }
+.bloque .n { font-size:11px; color:var(--suave); }
+.bloque .t { font-weight:600; font-size:14px; line-height:1.25; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.bloque .d { font-size:12px; color:var(--suave); margin-top:auto; }
+.bloque .mini { width:100%; height:52px; border-radius:6px; background:#000 center/cover no-repeat; display:grid; place-items:center; color:#fff; font-size:22px; }
+.bloque.recurso { --c:#2e6bd9; } .bloque.material { --c:#12a150; } .bloque.preguntas { --c:#f79009; }
+.bloque.error { border-color:var(--rojo); }
+.dos-paneles { display:grid; grid-template-columns:minmax(0,3fr) minmax(0,2fr); gap:16px; }
+@media (max-width:900px) { .dos-paneles { grid-template-columns:1fr; } }
+#inspector textarea { width:100%; font:13px/1.45 ui-monospace,monospace; padding:8px; border-radius:8px; border:1px solid var(--borde); background:var(--bg); color:var(--txt); box-sizing:border-box; }
+.vista-previa { margin:8px 0; } .vista-previa video, .vista-previa img, .vista-previa iframe { width:100%; max-height:260px; border-radius:8px; background:#000; border:0; }
+.vista-previa iframe { aspect-ratio:16/9; max-height:none; height:auto; }
+.lista-preg { max-height:320px; overflow:auto; border:1px solid var(--borde); border-radius:8px; padding:4px 8px; }
+.lista-preg label { flex-direction:row; gap:8px; align-items:flex-start; color:var(--txt); margin:4px 0; font-size:13px; }
+.lista-preg label.usada { opacity:.45; }
+.rec { display:flex; gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid var(--borde); }
+.rec .i { font-size:20px; } .rec .tt { flex:1; min-width:0; } .rec .tt b { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rec .tt span { font-size:12px; color:var(--suave); }
+.audios li { margin:4px 0; }
+details.sub { margin-top:12px; border-top:1px solid var(--borde); padding-top:8px; } details.sub summary { cursor:pointer; font-weight:600; }
+.barra-subida { height:8px; background:var(--borde); border-radius:4px; overflow:hidden; margin-top:8px; } .barra-subida div { height:100%; width:0; background:var(--azul); }
+.guardar-barra { position:sticky; bottom:0; z-index:3; box-shadow:0 -4px 14px rgba(0,0,0,.08); }
+.chico { padding:4px 10px; font-size:13px; }
+.botonera { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+.sucio { color:var(--ambar); font-weight:600; }
+</style>
+
+<script>
+const DATOS = {{ datos|tojson }};
+const P = "{{ P }}", SLUG = "{{ c.slug }}";
+</script>
+{% raw %}
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+let flujo = JSON.parse(JSON.stringify(DATOS.flujo));
+let recursos = DATOS.recursos, preguntas = DATOS.preguntas;
+let sel = null, sucio = false;
+const duracion = {};                      // id de recurso -> segundos (se lee del archivo)
+const ICONO = { video: "🎬", youtube: "▶️", documento: "📄", imagen: "🖼️", link: "🔗", audio: "🎧" };
+const TIPO_TXT = { recurso: "Video o archivo", material: "Material", preguntas: "Preguntas" };
+const nuevoId = () => "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+const rec = (id) => recursos.find((r) => r.id === id);
+const mmss = (s) => s >= 3600 ? `${Math.floor(s / 3600)} h ${Math.round(s % 3600 / 60)} min` : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+
+function marcarSucio(v = true) { sucio = v; $("estado-guardado").innerHTML = v ? '<span class="sucio">● Cambios sin guardar</span>' : ""; }
+window.addEventListener("beforeunload", (e) => { if (sucio) { e.preventDefault(); e.returnValue = ""; } });
+$("idioma-original").value = DATOS.idioma_original;
+$("idioma-original").oninput = () => marcarSucio();
+$("nueva-version").onchange = () => { $("recursar-box").hidden = !$("nueva-version").checked; };
+
+// --------------------------------------------------------------- duración de videos y audios
+function leerDuracion(r) {
+  if (duracion[r.id] !== undefined || !["video", "audio"].includes(r.tipo)) return;
+  duracion[r.id] = null;
+  const m = document.createElement(r.tipo === "audio" ? "audio" : "video");
+  m.preload = "metadata"; m.src = "/recursos/" + r.archivo;
+  m.onloadedmetadata = () => { duracion[r.id] = m.duration; pintar(); };
+}
+
+// --------------------------------------------------------------- texto de cada bloque
+function avanceTxt(p) {
+  if (p.tipo === "preguntas") return "hasta contestar todas";
+  if (p.avance === "fin_video") { const d = duracion[p.recurso]; return "hasta que termina" + (d ? ` (${mmss(d)})` : ""); }
+  if (p.avance === "minimo") return `mín. ${mmss(p.segundos)} → Siguiente`;
+  if (p.avance === "auto") return `pasa solo a los ${mmss(p.segundos)}`;
+  return "hasta «Siguiente»";
+}
+function segundosDe(p) {
+  if (p.avance === "fin_video") return duracion[p.recurso] || 0;
+  if (p.tipo === "preguntas") return (p.modo === "elegidas" ? p.ids.length : p.cantidad) * 20;
+  return p.segundos || 0;
+}
+function problema(p) {
+  if (p.tipo === "recurso" && !rec(p.recurso)) return "Elegí el video o archivo";
+  if (p.tipo === "material" && !(p.texto || "").trim()) return "Escribí el material";
+  if (p.tipo === "preguntas" && p.modo === "elegidas" && !p.ids.length) return "Marcá las preguntas";
+  if (["minimo", "auto"].includes(p.avance) && !(p.segundos > 0)) return "Poné el tiempo";
+  return "";
+}
+function miniatura(p) {
+  const r = p.tipo === "recurso" && rec(p.recurso);
+  if (!r) return `<div class="mini" style="background:var(--${p.tipo === "material" ? "verde" : p.tipo === "preguntas" ? "ambar" : "borde"})">${p.tipo === "material" ? "📖" : p.tipo === "preguntas" ? "📝" : "?"}</div>`;
+  if (r.tipo === "youtube") return `<div class="mini" style="background-image:url(https://i.ytimg.com/vi/${esc(r.youtube)}/mqdefault.jpg)"></div>`;
+  if (r.tipo === "imagen") return `<div class="mini" style="background-image:url('/recursos/${esc(r.archivo)}')"></div>`;
+  return `<div class="mini">${ICONO[r.tipo]}${r.audios && r.audios.length ? ` <small style="font-size:11px">🔊${r.audios.length + 1}</small>` : ""}</div>`;
+}
+
+// --------------------------------------------------------------- línea de tiempo
+function pintar() {
+  $("aviso-clasico").hidden = flujo.length > 0;
+  $("b-propuesta").hidden = !DATOS.propuesta.length;
+  recursos.forEach(leerDuracion);
+  const partes = ['<div class="nodo">▶<br>Inicio</div>'];
+  flujo.forEach((p, i) => {
+    const s = segundosDe(p), ancho = Math.round(Math.min(300, 150 + s / 4));
+    partes.push(`<div class="flecha" data-antes="${i}"></div>`);
+    partes.push(`<div class="bloque ${p.tipo}${sel === p.id ? " sel" : ""}${problema(p) ? " error" : ""}" draggable="true" data-id="${p.id}" style="width:${ancho}px"
+      title="${esc(TIPO_TXT[p.tipo])}">
+      <span class="n">${i + 1}. ${esc(TIPO_TXT[p.tipo])}</span>${miniatura(p)}
+      <span class="t">${esc(p.titulo || (rec(p.recurso) || {}).titulo || TIPO_TXT[p.tipo])}</span>
+      <span class="d">${problema(p) ? "⚠ " + esc(problema(p)) : "⏱ " + esc(avanceTxt(p))}</span></div>`);
+  });
+  partes.push(`<div class="flecha" data-antes="${flujo.length}"></div><div class="nodo">🏁<br>Fin</div>`);
+  $("linea").innerHTML = partes.join("");
+  const nPreg = flujo.filter((p) => p.tipo === "preguntas").reduce((a, p) => a + (p.modo === "elegidas" ? p.ids.length : p.cantidad), 0);
+  const total = flujo.reduce((a, p) => a + segundosDe(p), 0);
+  $("totales").textContent = flujo.length ? `${flujo.length} pasos · ${nPreg} preguntas en total · duración estimada ${mmss(total)}` +
+    (flujo.some((p) => p.avance === "libre" && p.tipo !== "preguntas") ? " (más lo que tarde en los pasos «hasta Siguiente»)" : "") : "";
+  pintarBiblioteca();
+}
+
+// arrastrar para ordenar
+let arrastrado = null;
+$("linea").addEventListener("dragstart", (e) => { const b = e.target.closest(".bloque"); if (!b) return;
+  arrastrado = b.dataset.id; b.classList.add("arrastrando"); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", arrastrado); });
+$("linea").addEventListener("dragend", () => { arrastrado = null; pintar(); });
+function destino(e) {
+  const b = e.target.closest(".bloque, .flecha"); if (!b) return null;
+  if (b.classList.contains("flecha")) return Number(b.dataset.antes);
+  const i = flujo.findIndex((p) => p.id === b.dataset.id), r = b.getBoundingClientRect();
+  return e.clientX < r.left + r.width / 2 ? i : i + 1;
+}
+$("linea").addEventListener("dragover", (e) => {
+  if (!arrastrado) return; e.preventDefault();
+  const d = destino(e);
+  document.querySelectorAll(".flecha").forEach((f) => f.classList.toggle("destino", Number(f.dataset.antes) === d));
+});
+$("linea").addEventListener("drop", (e) => {
+  e.preventDefault(); if (!arrastrado) return;
+  let d = destino(e); const i = flujo.findIndex((p) => p.id === arrastrado);
+  if (d === null || i < 0) return;
+  const [p] = flujo.splice(i, 1); if (d > i) d--; flujo.splice(d, 0, p);
+  marcarSucio(); pintar();
+});
+$("linea").addEventListener("click", (e) => { const b = e.target.closest(".bloque"); if (b) elegir(b.dataset.id); });
+
+// --------------------------------------------------------------- agregar pasos
+function agregar(tipo, extra = {}) {
+  const p = { id: nuevoId(), tipo, titulo: "", avance: "libre", segundos: 0, ...extra };
+  if (tipo === "recurso" && !p.recurso) {
+    const libre = recursos.find((r) => !flujo.some((x) => x.recurso === r.id)) || recursos[0];
+    if (libre) { p.recurso = libre.id; p.avance = libre.tipo === "video" ? "fin_video" : "libre"; }
+  }
+  if (tipo === "material") { p.titulo = "Material"; p.texto = "# Título\n- Primer punto\n- Segundo punto"; p.avance = "minimo"; p.segundos = 60; }
+  if (tipo === "preguntas") { p.titulo = "Preguntas"; p.modo = "azar"; p.cantidad = Math.max(1, Math.min(3, disponibles(p).length)); p.ids = []; }
+  const i = sel ? flujo.findIndex((x) => x.id === sel) + 1 : flujo.length;
+  flujo.splice(i || flujo.length, 0, p);
+  marcarSucio(); elegir(p.id);
+  setTimeout(() => document.querySelector(`.bloque[data-id="${p.id}"]`)?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" }), 50);
+}
+document.querySelectorAll("[data-nuevo]").forEach((b) => b.onclick = () => agregar(b.dataset.nuevo));
+$("b-propuesta").onclick = () => { flujo = JSON.parse(JSON.stringify(DATOS.propuesta)); marcarSucio(); sel = flujo[0]?.id || null; pintar(); if (sel) elegir(sel); };
+
+// preguntas que no usa otro paso (para "elegidas")
+function disponibles(p) {
+  const usadas = new Set(flujo.filter((x) => x.tipo === "preguntas" && x !== p).flatMap((x) => x.ids || []));
+  return preguntas.filter((q) => !usadas.has(q.id));
+}
+
+// --------------------------------------------------------------- inspector
+function elegir(id) { sel = id; pintar(); pintarInspector(); }
+function pintarInspector() {
+  const p = flujo.find((x) => x.id === sel), box = $("inspector");
+  if (!p) { box.innerHTML = '<p class="suave">Elegí un paso de la línea para editarlo.</p>'; return; }
+  const i = flujo.indexOf(p), r = rec(p.recurso);
+  let h = `<h2 style="margin-top:0">Paso ${i + 1}: ${esc(TIPO_TXT[p.tipo])}</h2>
+    <label>Título que ve el chofer<input id="i-titulo" maxlength="120" value="${esc(p.titulo)}" placeholder="${esc(r ? r.titulo : TIPO_TXT[p.tipo])}"></label>`;
+  if (p.tipo === "recurso") {
+    h += `<label>Qué muestra<select id="i-recurso"><option value="">— elegí —</option>${recursos.map((x) =>
+      `<option value="${x.id}" ${x.id === p.recurso ? "selected" : ""}>${ICONO[x.tipo]} ${esc(x.titulo)}</option>`).join("")}</select></label>`;
+    if (r) h += `<div class="vista-previa">${previa(r)}</div>`;
+    if (r && r.tipo === "video") {
+      h += `<h3>🔊 Audio en otros idiomas</h3><p class="suave">El video se reproduce sin su sonido y se escucha el audio del idioma que elige el chofer
+        (sincronizado). Subí un mp3 o m4a de la misma duración que el video. El audio original del video es «${esc($("idioma-original").value || "Español")}».</p>
+        <ul class="audios">${(r.audios || []).map((a) => `<li>🔊 <b>${esc(a.idioma)}</b> · <a href="/recursos/${esc(a.archivo)}" target="_blank">escuchar</a>
+          <button type="button" class="chico" data-quitar-audio="${a.id}">🗑</button></li>`).join("") || '<li class="suave">Solo el audio original.</li>'}</ul>
+        <div class="fila-form"><label>Idioma<input id="a-idioma" placeholder="Ej. Português" maxlength="30" list="idiomas"></label>
+          <label>Archivo de audio<input type="file" id="a-archivo" accept=".mp3,.m4a,.aac,.ogg,.opus,.wav"></label>
+          <button type="button" id="b-audio">⬆ Subir audio</button></div>
+        <datalist id="idiomas"><option>English</option><option>Português</option><option>Guaraní</option><option>Quechua</option><option>Aymara</option><option>Français</option></datalist>
+        <p class="suave" id="a-estado"></p>`;
+    }
+  }
+  if (p.tipo === "material") {
+    h += `<label>Material <span class="suave">(una línea con <code>#</code> es un título; cada línea de abajo, un punto. Links: <code>[texto](https://…)</code>)</span>
+      <textarea id="i-texto" rows="12">${esc(p.texto || "")}</textarea></label>`;
+  }
+  if (p.tipo === "preguntas") {
+    const disp = disponibles(p);
+    h += `<p class="suave">${DATOS.preguntas_propias ? `El curso tiene ${preguntas.length} preguntas propias.` : `El curso no tiene preguntas propias: usa el banco de la Ley 24.449 (${preguntas.length}).`}
+      <a href="${P}/cursos/${SLUG}/preguntas">Editar las preguntas del curso</a>. El chofer pasa al paso siguiente cuando contesta todas; la nota sale de todas las preguntas del flujo.</p>
+      <label class="switch"><input type="radio" name="i-modo" value="azar" ${p.modo !== "elegidas" ? "checked" : ""}> Al azar (no se repiten las de otros pasos)</label>
+      <label class="switch"><input type="radio" name="i-modo" value="elegidas" ${p.modo === "elegidas" ? "checked" : ""}> Elegir cuáles</label>`;
+    if (p.modo === "elegidas") {
+      h += `<input id="i-buscar" type="search" placeholder="Buscar pregunta" style="width:100%;margin:8px 0">
+        <div class="lista-preg" id="i-lista">${preguntas.map((q) => { const usada = !disp.includes(q);
+          return `<label class="${usada ? "usada" : ""}" data-txt="${esc(q.pregunta.toLowerCase())}"><input type="checkbox" value="${esc(q.id)}" ${p.ids.includes(q.id) ? "checked" : ""} ${usada ? "disabled" : ""}>
+            <span>${esc(q.pregunta)}${usada ? " <i>(en otro paso)</i>" : ""}</span></label>`; }).join("")}</div>
+        <p class="suave">${p.ids.length} marcadas.</p>`;
+    } else {
+      h += `<label>Cuántas preguntas<input id="i-cantidad" type="number" min="1" max="50" value="${p.cantidad || 3}" style="max-width:120px"></label>`;
+    }
+  } else {
+    const opciones = Object.entries(DATOS.avance).filter(([k]) => k !== "fin_video" || (r && ["video", "audio"].includes(r.tipo)));
+    h += `<h3>⏱ Tiempo del paso</h3><div class="fila-form"><label>Cuándo pasa al siguiente<select id="i-avance">${opciones.map(([k, v]) =>
+      `<option value="${k}" ${p.avance === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></label>
+      <label id="i-seg-box" ${["minimo", "auto"].includes(p.avance) ? "" : "hidden"}>Segundos<input id="i-segundos" type="number" min="1" max="7200" value="${p.segundos || ""}" style="max-width:120px"></label></div>
+      ${r && r.tipo === "youtube" ? '<p class="suave">En YouTube no se puede saber si lo vio entero: usá «Tiempo mínimo» con la duración del video.</p>' : ""}`;
+  }
+  h += `<div class="botonera"><button type="button" class="chico" id="i-antes" ${i ? "" : "disabled"}>◀ Mover antes</button>
+    <button type="button" class="chico" id="i-despues" ${i < flujo.length - 1 ? "" : "disabled"}>Mover después ▶</button>
+    <button type="button" class="chico" id="i-duplicar">⧉ Duplicar</button>
+    <button type="button" class="chico" id="i-quitar">🗑 Quitar del flujo</button></div>`;
+  box.innerHTML = h;
+  const cambio = (fn) => (e) => { fn(e); marcarSucio(); pintar(); };
+  $("i-titulo").oninput = cambio((e) => p.titulo = e.target.value);
+  if ($("i-recurso")) $("i-recurso").onchange = (e) => { cambiarRecurso(p, e.target.value); const n = rec(p.recurso);
+    if (p.avance === "fin_video" && !(n && ["video", "audio"].includes(n.tipo))) p.avance = "libre";
+    marcarSucio(); pintar(); pintarInspector(); };
+  if ($("i-texto")) $("i-texto").oninput = cambio((e) => p.texto = e.target.value);
+  document.querySelectorAll('[name="i-modo"]').forEach((x) => x.onchange = () => { p.modo = x.value; p.ids = p.ids || []; marcarSucio(); pintar(); pintarInspector(); });
+  if ($("i-cantidad")) $("i-cantidad").oninput = cambio((e) => p.cantidad = Math.max(1, Math.min(50, Number(e.target.value) || 1)));
+  if ($("i-lista")) {
+    $("i-lista").onchange = (e) => { const v = e.target.value;
+      p.ids = e.target.checked ? [...p.ids, v] : p.ids.filter((x) => x !== v); marcarSucio(); pintar();
+      e.target.closest(".tarjeta").querySelector("#i-lista + p").textContent = `${p.ids.length} marcadas.`; };
+    $("i-buscar").oninput = (e) => { const t = e.target.value.toLowerCase();
+      document.querySelectorAll("#i-lista label").forEach((l) => l.hidden = t && !l.dataset.txt.includes(t)); };
+  }
+  if ($("i-avance")) $("i-avance").onchange = (e) => { p.avance = e.target.value; $("i-seg-box").hidden = !["minimo", "auto"].includes(p.avance);
+    if (!$("i-seg-box").hidden && !p.segundos) { p.segundos = 60; $("i-segundos").value = 60; } marcarSucio(); pintar(); };
+  if ($("i-segundos")) $("i-segundos").oninput = cambio((e) => p.segundos = Math.max(0, Math.min(7200, Number(e.target.value) || 0)));
+  $("i-antes").onclick = () => { flujo.splice(i, 1); flujo.splice(i - 1, 0, p); marcarSucio(); pintar(); pintarInspector(); };
+  $("i-despues").onclick = () => { flujo.splice(i, 1); flujo.splice(i + 1, 0, p); marcarSucio(); pintar(); pintarInspector(); };
+  $("i-duplicar").onclick = () => { const c = JSON.parse(JSON.stringify(p)); c.id = nuevoId(); if (c.ids) c.ids = [];
+    if (c.tipo === "preguntas") c.modo = "azar"; flujo.splice(i + 1, 0, c); marcarSucio(); elegir(c.id); };
+  $("i-quitar").onclick = () => { if (!confirm("¿Quitar este paso del flujo? (el video o archivo sigue en la biblioteca)")) return;
+    flujo.splice(i, 1); sel = (flujo[i] || flujo[i - 1] || {}).id || null; marcarSucio(); pintar(); pintarInspector(); };
+  if ($("b-audio")) $("b-audio").onclick = subirAudio;
+  box.querySelectorAll("[data-quitar-audio]").forEach((b) => b.onclick = async () => {
+    if (!confirm("¿Quitar este audio? (el archivo queda guardado)")) return;
+    const d = await api({ accion: "quitar_audio", vid: p.recurso, aid: b.dataset.quitarAudio });
+    if (d.ok) { recursos = d.recursos; pintar(); pintarInspector(); } else alert(d.error);
+  });
+}
+// cambiar el video de un paso: si el título era el del video anterior, toma el del nuevo
+function cambiarRecurso(p, id) {
+  const viejo = rec(p.recurso);
+  if (viejo && p.titulo === viejo.titulo) p.titulo = "";
+  p.recurso = id;
+}
+function previa(r) {
+  if (r.tipo === "video") return `<video src="/recursos/${esc(r.archivo)}" controls preload="metadata"></video>`;
+  if (r.tipo === "audio") return `<audio src="/recursos/${esc(r.archivo)}" controls preload="metadata" style="width:100%"></audio>`;
+  if (r.tipo === "imagen") return `<img src="/recursos/${esc(r.archivo)}" alt="">`;
+  if (r.tipo === "youtube") return `<iframe src="https://www.youtube-nocookie.com/embed/${esc(r.youtube)}" allowfullscreen></iframe>`;
+  if (r.tipo === "documento") return `<a class="boton" href="/recursos/${esc(r.archivo)}" target="_blank">📄 Abrir el PDF ↗</a>`;
+  return `<a class="boton" href="${esc(r.url)}" target="_blank" rel="noopener">🔗 ${esc(r.url.slice(0, 70))} ↗</a>`;
+}
+
+// --------------------------------------------------------------- biblioteca
+function pintarBiblioteca() {
+  const p = flujo.find((x) => x.id === sel);
+  $("biblioteca").innerHTML = recursos.length ? recursos.map((r) => {
+    const usos = flujo.filter((x) => x.recurso === r.id).length;
+    const d = duracion[r.id] ? " · " + mmss(duracion[r.id]) : "";
+    return `<div class="rec"><span class="i">${ICONO[r.tipo]}</span><div class="tt"><b title="${esc(r.titulo)}">${esc(r.titulo)}</b>
+      <span>${usos ? `en ${usos} paso(s)` : "sin usar"}${d}${r.audios && r.audios.length ? " · 🔊 " + r.audios.map((a) => esc(a.idioma)).join(", ") : ""}</span></div>
+      ${p && p.tipo === "recurso" && p.recurso !== r.id ? `<button type="button" class="chico" data-usar="${r.id}">Usar en el paso</button>` : ""}
+      <button type="button" class="chico" data-sumar="${r.id}" title="Agregar un paso con este recurso">➕</button></div>`;
+  }).join("") : '<p class="suave">Todavía no hay videos ni archivos. Subí uno abajo.</p>';
+  $("biblioteca").querySelectorAll("[data-usar]").forEach((b) => b.onclick = () => {
+    const r = rec(b.dataset.usar); cambiarRecurso(p, r.id); if (p.avance === "fin_video" && r.tipo !== "video" && r.tipo !== "audio") p.avance = "libre";
+    marcarSucio(); pintar(); pintarInspector(); });
+  $("biblioteca").querySelectorAll("[data-sumar]").forEach((b) => b.onclick = () => {
+    const r = rec(b.dataset.sumar); agregar("recurso", { recurso: r.id, avance: ["video", "audio"].includes(r.tipo) ? "fin_video" : "libre" }); });
+}
+
+// --------------------------------------------------------------- servidor
+async function api(cuerpo) {
+  const r = await fetch(`${P}/api/flujo/${SLUG}`, { method: "POST", credentials: "same-origin",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) });
+  try { return await r.json(); } catch { return { ok: false, error: "Error " + r.status }; }
+}
+async function recargarRecursos() {
+  const r = await fetch(`${P}/api/flujo/${SLUG}`, { credentials: "same-origin" });
+  const d = await r.json(); recursos = d.recursos; preguntas = d.preguntas; return d;
+}
+async function guardar(lista) {
+  $("b-guardar").disabled = true; $("estado-guardado").textContent = "Guardando…";
+  const d = await api({ flujo: lista, idioma_original: $("idioma-original").value, nueva_version: $("nueva-version").checked,
+                        recursar_todos: $("nueva-version").checked && $("recursar").checked });
+  $("b-guardar").disabled = false;
+  if (!d.ok) { $("estado-guardado").innerHTML = `<span class="error">✖ ${esc(d.error)}</span>`; return false; }
+  flujo = d.flujo; recursos = d.recursos; DATOS.propuesta = d.propuesta; marcarSucio(false);
+  $("ver").textContent = "v" + d.version; $("nueva-version").checked = false; $("recursar").checked = false; $("recursar-box").hidden = true;
+  $("estado-guardado").textContent = `✔ Guardado (v${d.version}, revisión ${d.revision})` + (d.recursados ? ` · ${d.recursados} chofer(es) lo tienen que volver a hacer` : "");
+  if (sel && !flujo.some((p) => p.id === sel)) sel = null;
+  pintar(); pintarInspector(); return true;
+}
+$("b-guardar").onclick = () => {
+  const mal = flujo.map((p, i) => problema(p) && `Paso ${i + 1}: ${problema(p)}`).filter(Boolean);
+  if (mal.length) { $("estado-guardado").innerHTML = `<span class="error">✖ ${esc(mal.join(" · "))}</span>`; return; }
+  guardar(flujo);
+};
+$("b-clasico").onclick = () => {
+  if (!flujo.length && !DATOS.flujo.length) return;
+  if (confirm("¿Sacar el flujo? El curso vuelve a mostrar el material y los videos juntos y la evaluación al final. (Queda en el historial por si lo querés restaurar)"))
+    guardar([]);
+};
+
+// subida por partes (pasa por Cloudflare)
+const PARTE = 32 * 1024 * 1024;
+async function subirPorPartes(f, extra, alAvanzar) {
+  let offset = 0;
+  while (offset < f.size) {
+    const q = new URLSearchParams({ nombre: f.name, offset, total: f.size, ...extra });
+    const r = await fetch(`${P}/api/subir/${SLUG}?${q}`, { method: "POST", body: f.slice(offset, offset + PARTE), credentials: "same-origin",
+                                                           headers: { "Content-Type": "application/octet-stream" } });
+    let d = {}; try { d = await r.json(); } catch {}
+    if (r.status === 409 && d.esperado !== undefined) { offset = d.esperado; continue; }
+    if (!r.ok || !d.ok) throw new Error(d.detail || "error " + r.status);
+    offset = d.recibido; alAvanzar(offset / f.size);
+    if (d.listo) return d;
+  }
+}
+$("b-subir").onclick = async () => {
+  const f = $("archivo").files[0]; if (!f) { $("subida-estado").textContent = "Elegí un archivo."; return; }
+  $("b-subir").disabled = true; $("subida").hidden = false;
+  try {
+    const d = await subirPorPartes(f, { titulo: $("titulo-archivo").value.trim() }, (x) => {
+      $("subida-barra").style.width = Math.round(x * 100) + "%";
+      $("subida-estado").textContent = `Subiendo… ${Math.round(x * 100)}% (${(x * f.size / 1048576).toFixed(0)} de ${(f.size / 1048576).toFixed(0)} MB)`; });
+    await recargarRecursos();
+    $("subida-estado").textContent = "✔ Subido.";
+    $("archivo").value = ""; $("titulo-archivo").value = "";
+    const r = rec(d.id);
+    if (r && $("subir-al-flujo").checked) agregar("recurso", { recurso: r.id, avance: ["video", "audio"].includes(r.tipo) ? "fin_video" : "libre" });
+    else pintar();
+  } catch (e) { $("subida-estado").textContent = "✖ No se pudo subir: " + e.message + ". Probá de nuevo (sigue desde donde quedó)."; }
+  $("b-subir").disabled = false;
+};
+async function subirAudio() {
+  const p = flujo.find((x) => x.id === sel), f = $("a-archivo").files[0], idioma = $("a-idioma").value.trim();
+  if (!idioma || !f) { $("a-estado").textContent = "Escribí el idioma y elegí el archivo."; return; }
+  if (!DATOS.recursos.some((r) => r.id === p.recurso) && !rec(p.recurso)) return;
+  $("b-audio").disabled = true;
+  try {
+    await subirPorPartes(f, { audio_de: p.recurso, idioma }, (x) => $("a-estado").textContent = `Subiendo… ${Math.round(x * 100)}%`);
+    await recargarRecursos(); pintar(); pintarInspector();
+  } catch (e) { $("a-estado").textContent = "✖ " + e.message; $("b-audio").disabled = false; }
+}
+$("b-link").onclick = async () => {
+  const url = $("link-url").value.trim(); if (!url) return;
+  const yt = /youtu\.?be/.test(url);
+  const d = await api({ accion: yt ? "youtube" : "link", url, titulo: $("link-titulo").value.trim() });
+  if (!d.ok) { $("link-estado").textContent = "✖ " + d.error; return; }
+  const viejos = new Set(recursos.map((r) => r.id)); recursos = d.recursos;
+  const nuevo = recursos.find((r) => !viejos.has(r.id));
+  $("link-url").value = ""; $("link-titulo").value = ""; $("link-estado").textContent = "✔ Agregado.";
+  if (nuevo) agregar("recurso", { recurso: nuevo.id, avance: "libre" }); else pintar();
+};
+
+pintar();
+if (flujo.length) elegir(flujo[0].id);
+</script>
+{% endraw %}
+{% endblock %}

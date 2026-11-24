@@ -17,6 +17,14 @@
   </div>
   <label>Descripción (la ven los choferes arriba de todo)<textarea name="descripcion" rows="2" maxlength="1000">{{ c.descripcion }}</textarea></label>
 
+  <div class="aviso" style="margin:10px 0">
+    {% if c.flujo %}🎞 <b>Este curso usa un flujo</b> de {{ c.flujo|length }} pasos (video → preguntas → video…). El orden, los tiempos y las preguntas
+      de cada paso se arman en el flujo; el material y los videos de esta página son la biblioteca.
+    {% else %}🎞 <b>Flujo del curso:</b> armá el recorrido paso por paso (video 1 → preguntas → video 2 → preguntas…), con tiempo por paso
+      y audio en varios idiomas. Hoy el curso usa el modo clásico (todo junto y la evaluación al final).{% endif %}
+    <a class="boton primario" href="{{ P }}/cursos/{{ c.slug }}/flujo" style="margin-left:6px">🎞 {{ 'Editar el flujo' if c.flujo else 'Armar el flujo' }}</a>
+  </div>
+
   <h2>Cómo se hace</h2>
   <div class="dos-col">
     <label>Control de atención<select name="atencion">
