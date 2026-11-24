@@ -533,6 +533,7 @@ function mostrarResultado(r) {
       : `<div class="metricas"><div><b>${Math.round(a.segundos / 60 * 10) / 10} min</b>de estudio</div></div>`) +
     (r.fallas.length ? `<h3>Repasá estas respuestas</h3>` + r.fallas.map((f) => `<div class="falla"><b>${esc(f.pregunta)}</b>` +
       `<div class="res-mal">Tu respuesta: ${esc(f.respuesta)}</div><div class="res-ok">Correcta: ${esc(f.correcta)}</div></div>`).join("") : "") +
+    (r.diploma ? `<a class="boton" href="/panel/publico/diploma/${esc(r.diploma)}" target="_blank" rel="noopener">🎓 Descargar tu diploma (PDF)</a>` : "") +
     `<p class="suave">Tu resultado quedó registrado.${estado.modo === "camara" ? " La cámara ya está apagada." : ""}</p>` +
     `<p><a href="/">← Volver a las capacitaciones</a></p>`;
   mostrar("paso-resultado");

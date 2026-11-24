@@ -106,7 +106,7 @@ function dibujar() {
         const wa = ["pendiente", "atrasado", "vencido", "por_vencer"].includes(f.estado) ? whatsapp(f) : "";
         return `<tr>${GESTION ? `<td><input type="checkbox" class="marca" value="${esc(f.dni)}"></td>` : ""}` +
           `<td>${esc(f.nombre)}<div class="suave">${esc(f.dni)}</div></td><td>${esc(f.transporte || "")}</td><td>${esc(f.curso_titulo)}</td>` +
-          `<td>${esc(f.estado_txt)}</td><td>${fecha(f.limite)}</td><td>${fecha(f.aprobado_el)}</td><td>${fecha(f.vence)}</td>` +
+          `<td>${esc(f.estado_txt)}</td><td>${fecha(f.limite)}</td><td>${fecha(f.aprobado_el)}${f.diploma ? ` <a href="/panel/publico/diploma/${esc(f.diploma)}" target="_blank" title="Diploma (PDF)">🎓</a>` : ""}</td><td>${fecha(f.vence)}</td>` +
           `<td class="n">${f.intentos}</td><td class="n">${f.mejor ?? ""}</td>` +
           `<td>${wa ? `<a class="boton chico" href="${wa}" target="_blank" rel="noopener" title="Mandarle un recordatorio por WhatsApp">💬</a>` : ""}</td></tr>`;
       }).join("") + "</tbody>"

@@ -66,7 +66,7 @@ def _base(slug, titulo, descripcion, orden):
             "material": json.loads(json.dumps(MATERIAL_LEY)), "videos": [], "min_segundos": 60,
             "atencion": "elegir", "mostrar_camara": True, "examen": True,
             "preguntas": [], "preguntas_por_examen": 10, "aprobacion": 70, "acceso": "abierto", "vigencia_meses": 0,
-            "flujo": [], "idioma_original": "Español"}
+            "flujo": [], "idioma_original": "Español", "diploma": True}
 
 
 INICIALES = [
@@ -148,6 +148,7 @@ _NOMBRES = {"titulo": "título", "descripcion": "descripción", "acceso": "quié
             "vigencia_meses": "vigencia", "vence_fecha": "fecha de vencimiento", "vigencia_desde": "cómo se cuenta la vigencia",
             "atencion": "control de atención", "mostrar_camara": "mostrar cámara", "examen": "evaluación",
             "min_segundos": "tiempo mínimo", "orden": "orden", "preguntas_por_examen": "preguntas por examen",
+            "diploma": "diploma", "diploma_emisor": "quién emite el diploma", "diploma_firma_nombre": "firma del diploma",
             "aprobacion": "% para aprobar"}
 
 
@@ -299,6 +300,9 @@ def actualizar(slug, f):
     except ValueError:
         pass
     curso["material"] = texto_a_material(f.get("material", ""))
+    curso["diploma"] = f.get("diploma") == "1"
+    for k in ("diploma_emisor", "diploma_firma_nombre", "diploma_firma_cargo"):
+        curso[k] = " ".join(str(f.get(k) or "").split())[:80]
     # títulos y orden de los videos (v_titulo_<id>, v_orden_<id>)
     for v in curso["videos"]:
         t = f.get(f"v_titulo_{v['id']}")

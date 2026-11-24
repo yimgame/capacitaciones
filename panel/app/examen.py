@@ -22,7 +22,7 @@ VENCE_SESION = 24 * 3600
 
 COLUMNAS = ["fecha", "nombre", "dni", "celular", "empresa", "fecha_nacimiento", "curso", "modo", "correctas", "total",
             "puntaje", "aprobado", "errores", "consentimiento", "atencion_pct", "distracciones", "salidas_pantalla",
-            "segundos_estudio", "segundos_sin_atencion", "dispositivo", "curso_version"]
+            "segundos_estudio", "segundos_sin_atencion", "dispositivo", "curso_version", "diploma"]
 
 
 def iniciar():
@@ -40,6 +40,41 @@ def iniciar():
         for tabla in ("examen_sesiones", "resultados"):          # 2026-11-17: qué versión del curso rindió
             if "curso_version" not in {r["name"] for r in c.execute(f"PRAGMA table_info({tabla})")}:
                 c.execute(f"ALTER TABLE {tabla} ADD COLUMN curso_version INTEGER")
+        if "diploma" not in {r["name"] for r in c.execute("PRAGMA table_info(resultados)")}:   # 2026-11-24
+            c.execute("ALTER TABLE resultados ADD COLUMN diploma TEXT")
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS resultados_diploma ON resultados(diploma)")
+
+
+# Código de verificación del diploma: 12 caracteres sin los que se confunden (0/O, 1/I/L).
+_LETRAS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+
+def codigo_diploma():
+    x = "".join(secrets.choice(_LETRAS) for _ in range(12))
+    return f"{x[:4]}-{x[4:8]}-{x[8:]}"
+
+
+def asegurar_diploma(rid):
+    """Código del diploma de un resultado aprobado (los aprobados de antes del diploma lo reciben al pedirlo)."""
+    with closing(cursos.con()) as c, c:
+        r = c.execute("SELECT diploma, aprobado FROM resultados WHERE id=?", (rid,)).fetchone()
+        if not r or not r["aprobado"]:
+            return None
+        if r["diploma"]:
+            return r["diploma"]
+        cod = codigo_diploma()
+        c.execute("UPDATE resultados SET diploma=? WHERE id=?", (cod, rid))
+        return cod
+
+
+def por_diploma(codigo):
+    cod = re.sub(r"[^A-Z0-9]", "", str(codigo or "").upper())
+    if len(cod) != 12:
+        return None
+    with closing(cursos.con()) as c:
+        r = c.execute("SELECT * FROM resultados WHERE diploma=? AND aprobado=1",
+                      (f"{cod[:4]}-{cod[4:8]}-{cod[8:]}",)).fetchone()
+    return dict(r) if r else None
 
 
 def _mezclar(lista):
@@ -164,12 +199,16 @@ def fin(b):
         "segundos_estudio": _num(a.get("segundos"), 86400),
         "segundos_sin_atencion": _num(a.get("segundosSinAtencion"), 86400) if camara else None,
         "dispositivo": str(b.get("dispositivo") or "")[:120], "curso_version": s["curso_version"],
+        "diploma": None,
     }
+    curso = cursos.obtener(s["curso"]) or {}
+    if fila["aprobado"] and curso.get("diploma", True):
+        fila["diploma"] = codigo_diploma()
     with closing(cursos.con()) as c, c:
         c.execute(f"INSERT INTO resultados ({','.join(COLUMNAS)}) VALUES ({','.join('?' * len(COLUMNAS))})",
                   [fila[k] for k in COLUMNAS])
     return {"ok": True, "correctas": correctas, "total": total, "puntaje": puntaje, "aprobado": fila["aprobado"],
-            "aprobacion": aprobacion, "fallas": fallas}
+            "aprobacion": aprobacion, "fallas": fallas, "diploma": fila["diploma"]}
 
 
 def resultados():

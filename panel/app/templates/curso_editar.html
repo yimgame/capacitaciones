@@ -54,6 +54,15 @@
     ({{ c.preguntas_por_examen or 10 }} preguntas al azar de {{ ((c.preguntas|length) ~ ' propias') if c.preguntas else 'la Ley 24.449' }}, se aprueba con {{ c.aprobacion or 70 }}%)</label>
   <p><a class="boton" href="{{ P }}/cursos/{{ c.slug }}/preguntas">📝 Editar preguntas y respuestas</a></p>
 
+  <h2>🎓 Diploma</h2>
+  <label class="switch"><input type="checkbox" name="diploma" value="1" {{ 'checked' if c.diploma is not defined or c.diploma }}>
+    Al aprobar, el chofer descarga un diploma en PDF (con código de verificación)</label>
+  <div class="dos-col">
+    <label>Emitido por (arriba del diploma)<input name="diploma_emisor" maxlength="80" value="{{ c.diploma_emisor or '' }}" placeholder="Capacitación de choferes"></label>
+    <label>Firma: nombre <span class="suave">(opcional)</span><input name="diploma_firma_nombre" maxlength="80" value="{{ c.diploma_firma_nombre or '' }}"></label>
+    <label>Firma: cargo <span class="suave">(opcional)</span><input name="diploma_firma_cargo" maxlength="80" value="{{ c.diploma_firma_cargo or '' }}"></label>
+  </div>
+
   <h2>Material de estudio</h2>
   <p class="suave">Una línea que empieza con <code>#</code> es un título; cada línea de abajo es un punto de la lista.
     Los links (<code>https://…</code>) quedan clickeables; también podés escribir <code>[Ley de Tránsito 24.449](https://…)</code>.</p>

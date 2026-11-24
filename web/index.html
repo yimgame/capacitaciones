@@ -23,6 +23,7 @@ button.link { width:auto; background:none; color:var(--acento); padding:0; margi
 a.curso:hover { border-color:var(--acento); transform:translateY(-1px); }
 .curso b { display:block; font-size:18px; margin-bottom:4px; }
 .curso .ir { color:var(--acento); font-weight:600; font-size:15px; margin-top:8px; display:block; }
+a.diploma { display:block; margin:-4px 0 14px 4px; font-weight:600; color:var(--ok); }
 .estado { font-size:14px; font-weight:600; } .e-aprobado { color:var(--ok); } .e-por_vencer, .e-pendiente { color:var(--aviso); } .e-atrasado, .e-vencido { color:var(--mal); }
 .oculto { display:none; }
 </style>
@@ -93,8 +94,10 @@ async function cargarMios() {
                       atrasado: `Tenías hasta el ${fecha(c.limite)}`,
                       pendiente: c.limite ? `Tenés hasta el ${fecha(c.limite)}` : "" }[c.estado];
         const intentos = c.intentos && c.estado !== "aprobado" ? ` · ${c.intentos} intento(s)` : "";
+        // (fuera de la tarjeta: la tarjeta ya es un link)
+        const dip = c.diploma ? `<a class="diploma" href="/panel/publico/diploma/${esc(c.diploma)}" target="_blank" rel="noopener">🎓 Descargar el diploma de «${esc(c.titulo)}» (PDF)</a>` : "";
         return tarjeta(c, `<div class="estado e-${c.estado}">${esc(c.estado_txt)}</div><div class="suave">${esc(det)}${intentos}</div>`,
-                       c.estado === "aprobado" ? "Repasar →" : "Hacer la capacitación →");
+                       c.estado === "aprobado" ? "Repasar →" : "Hacer la capacitación →") + dip;
       }).join("")
     : `<p class="suave">No tenés capacitaciones asignadas por ahora.</p>`;
   abiertos(d.abiertos, true);

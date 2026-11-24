@@ -411,6 +411,7 @@ def estado(asig, resultados, curso, hoy=None):
     if aprobados:
         ap = _fecha_local(aprobados[-1]["fecha"]).date()
         out["aprobado_el"] = ap.isoformat()
+        out["resultado_id"], out["diploma"] = aprobados[-1].get("id"), aprobados[-1].get("diploma")
         vence = None
         if meses > 0 and curso.get("vigencia_desde") != "version":
             vence = _sumar_meses(ap, meses)               # cuenta desde que aprobó cada chofer
@@ -519,7 +520,10 @@ def mis_cursos(ch, resultados):
     asignados = sorted(({"slug": a["curso"], "titulo": a["curso_titulo"],
                          "descripcion": habilitados[a["curso"]].get("descripcion", ""), "estado": a["estado"],
                          "estado_txt": a["estado_txt"], "limite": a["limite"], "vence": a["vence"],
-                         "aprobado_el": a["aprobado_el"], "intentos": a["intentos"]}
+                         "aprobado_el": a["aprobado_el"], "intentos": a["intentos"],
+                         "diploma": a.get("diploma") if a["estado"] in ("aprobado", "por_vencer") and
+                         habilitados[a["curso"]].get("diploma", True) else None,
+                         "resultado_id": a.get("resultado_id")}
                         for a in asign if a["curso"] in habilitados), key=lambda x: orden[x["estado"]])
     ya = {a["slug"] for a in asignados}
     abiertos = [{"slug": c["slug"], "titulo": c["titulo"], "descripcion": c.get("descripcion", "")}

@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import auth, cursos, datos, demo, examen, padron, respaldo
+from . import auth, cursos, datos, demo, diploma, examen, padron, respaldo
 
 BASE = Path(__file__).resolve().parent
 PREFIJO = "/panel"
@@ -307,8 +307,38 @@ async def chofer_cursos(req: Request):
     ch = padron.chofer_de_token(b.get("token"))
     if not ch:
         return JSONResponse({"ok": False, "error": "Sesión vencida: volvé a ingresar."}, status_code=401)
-    return {"ok": True, "nombre": ch["nombre"], "transporte": ch["transporte"], "falta_celular": not ch["celular"],
-            **padron.mis_cursos(ch, examen.resultados())}
+    mios = padron.mis_cursos(ch, examen.resultados())
+    for c in mios["asignados"]:                 # aprobados de antes del diploma: el código se crea al pedirlo
+        rid = c.pop("resultado_id", None)
+        if c["estado"] in ("aprobado", "por_vencer") and not c["diploma"] and rid and \
+                (cursos.obtener(c["slug"]) or {}).get("diploma", True):
+            c["diploma"] = examen.asegurar_diploma(rid)
+    return {"ok": True, "nombre": ch["nombre"], "transporte": ch["transporte"], "falta_celular": not ch["celular"], **mios}
+
+
+@app.get(PREFIJO + "/publico/diploma/{codigo}")
+def diploma_pdf(req: Request, codigo: str):
+    """Diploma en PDF. El código es la verificación: con el link se vuelve a generar desde la base."""
+    r = examen.por_diploma(codigo)
+    curso = cursos.obtener(r["curso"]) if r else None
+    if not r or not curso or not curso.get("diploma", True):
+        return HTMLResponse("<h1>Diploma no encontrado</h1><p>Revisá el código de verificación.</p>", status_code=404)
+    fecha = padron._fecha_local(r["fecha"]).date()
+    meses = int(curso.get("vigencia_meses") or 0)
+    if meses > 0 and curso.get("vigencia_desde") != "version":
+        vence = padron._sumar_meses(fecha, meses)
+    else:
+        corte = cursos.fecha_corte(curso)
+        vence = corte if corte and fecha < corte else None
+    proto = "https" if _https(req) else req.url.scheme
+    url = f"{proto}://{req.headers.get('host', req.url.netloc)}{PREFIJO}/publico/diploma/{r['diploma']}"
+    pdf = diploma.pdf({"nombre": r["nombre"] or "", "dni": r["dni"], "curso": curso["titulo"], "fecha": fecha,
+                       "puntaje": r["puntaje"], "version": f"v{r['curso_version']}" if r.get("curso_version") else "",
+                       "vence": vence, "codigo": r["diploma"], "emisor": curso.get("diploma_emisor"),
+                       "firma_nombre": curso.get("diploma_firma_nombre"), "firma_cargo": curso.get("diploma_firma_cargo"),
+                       "url": url})
+    nombre = f"diploma-{curso['slug']}-{r['dni']}.pdf"
+    return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{nombre}"'})
 
 
 @app.post(PREFIJO + "/publico/chofer/celular")
@@ -653,7 +683,7 @@ def cumplimiento_api(req: Request, transporte: str = "", curso: str = "", estado
     u = _requiere(req)
     filas, semaforo = _cumplimiento(u, transporte, curso, estado, jrt)
     claves = ("curso", "curso_titulo", "dni", "nombre", "celular", "transporte", "transporte_id", "jrt", "estado",
-              "estado_txt", "limite", "vence", "aprobado_el", "intentos", "mejor", "ultimo")
+              "estado_txt", "limite", "vence", "aprobado_el", "intentos", "mejor", "ultimo", "diploma")
     return {"filas": [{k: f.get(k) for k in claves} for f in filas], "semaforo": semaforo,
             "reglas": [r for r in padron.reglas() if not _solo_transporte(u) or r["transporte_id"] == _solo_transporte(u)]}
 
