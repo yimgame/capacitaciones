@@ -40,6 +40,8 @@ def iniciar():
         for tabla in ("examen_sesiones", "resultados"):          # 2026-11-17: qué versión del curso rindió
             if "curso_version" not in {r["name"] for r in c.execute(f"PRAGMA table_info({tabla})")}:
                 c.execute(f"ALTER TABLE {tabla} ADD COLUMN curso_version INTEGER")
+        if "consentimiento" not in {r["name"] for r in c.execute("PRAGMA table_info(examen_sesiones)")}:   # 2026-11-25
+            c.execute("ALTER TABLE examen_sesiones ADD COLUMN consentimiento INTEGER")
         if "diploma" not in {r["name"] for r in c.execute("PRAGMA table_info(resultados)")}:   # 2026-11-24
             c.execute("ALTER TABLE resultados ADD COLUMN diploma TEXT")
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS resultados_diploma ON resultados(diploma)")
@@ -117,10 +119,11 @@ def inicio(b):
         errores.append("Celular")
     if not 16 <= edad <= 90:
         errores.append("Fecha de nacimiento")
-    if modo == "camara" and b.get("consentimiento") is not True:
-        errores.append("Consentimiento")
     slug = str(b.get("curso") or "")
     curso = cursos.obtener(slug)
+    pide = (curso or {}).get("pedir_consentimiento", True)      # el curso puede no mostrar la pantalla de aviso
+    if modo == "camara" and pide and b.get("consentimiento") is not True:
+        errores.append("Consentimiento")
     if not curso or not curso.get("habilitado"):
         errores.append("Curso no disponible")
     elif curso.get("acceso") == "asignados" and not (ch and padron.asignacion(slug, ch["dni"])):
@@ -155,10 +158,10 @@ def inicio(b):
     with closing(cursos.con()) as c, c:
         c.execute("DELETE FROM examen_sesiones WHERE creado < ?", (ahora - VENCE_SESION,))
         c.execute("""INSERT INTO examen_sesiones (sesion, creado, curso, modo, nombre, dni, celular, empresa,
-                     fecha_nacimiento, preguntas, aprobacion, curso_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     fecha_nacimiento, preguntas, aprobacion, curso_version, consentimiento) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                   (sesion, ahora, slug, modo, nombre, dni, celular, empresa, nacimiento,
                    json.dumps(elegidas, ensure_ascii=False), curso.get("aprobacion", cursos.APROBACION),
-                   curso.get("version", 1)))
+                   curso.get("version", 1), 1 if modo == "camara" and b.get("consentimiento") is True else 0))
     return {"ok": True, "sesion": sesion,
             "preguntas": [{"n": i, "pregunta": p["pregunta"], "opciones": p["opciones"], "paso": p.get("paso")}
                           for i, p in enumerate(elegidas)]}
@@ -192,7 +195,7 @@ def fin(b):
         "celular": s["celular"], "empresa": s["empresa"], "fecha_nacimiento": s["fecha_nacimiento"],
         "curso": s["curso"], "modo": s["modo"], "correctas": correctas, "total": total, "puntaje": puntaje,
         "aprobado": puntaje >= aprobacion, "errores": " | ".join(f["pregunta"] for f in fallas),
-        "consentimiento": camara,
+        "consentimiento": camara and bool(s["consentimiento"]),   # con cámara sin la pantalla de aviso: queda 0
         "atencion_pct": _num(a.get("pct"), 100) if camara else None,
         "distracciones": _num(a.get("distracciones"), 9999) if camara else None,
         "salidas_pantalla": _num(a.get("salidas"), 9999) if camara else None,

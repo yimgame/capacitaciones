@@ -147,7 +147,7 @@ def guardar(curso, nueva_version=False, nota=""):
 
 _NOMBRES = {"titulo": "título", "descripcion": "descripción", "acceso": "quién lo puede hacer",
             "vigencia_meses": "vigencia", "vence_fecha": "fecha de vencimiento", "vigencia_desde": "cómo se cuenta la vigencia",
-            "atencion": "control de atención", "mostrar_camara": "mostrar cámara", "examen": "evaluación",
+            "atencion": "control de atención", "mostrar_camara": "mostrar cámara", "pedir_consentimiento": "pedir consentimiento", "examen": "evaluación",
             "min_segundos": "tiempo mínimo", "orden": "orden", "preguntas_por_examen": "preguntas por examen",
             "periodo_inicio": "fecha de inicio", "periodo_fin": "fecha de fin",
             "diploma": "diploma", "diploma_emisor": "quién emite el diploma", "diploma_firma_nombre": "firma del diploma",
@@ -280,6 +280,7 @@ def actualizar(slug, f):
     curso["descripcion"] = (f.get("descripcion") or "").strip()[:1000]
     curso["habilitado"] = f.get("habilitado") == "1"
     curso["mostrar_camara"] = f.get("mostrar_camara") == "1"
+    curso["pedir_consentimiento"] = f.get("pedir_consentimiento") == "1"
     curso["examen"] = f.get("examen") == "1"
     curso["atencion"] = f.get("atencion") if f.get("atencion") in ATENCION else "elegir"
     curso["acceso"] = f.get("acceso") if f.get("acceso") in ACCESO else "abierto"
@@ -416,6 +417,7 @@ def publico(curso):
                                   "mostrar_camara", "examen")} | {
         "aprobacion": curso.get("aprobacion", APROBACION), "acceso": curso.get("acceso", "abierto"),
         "version": curso.get("version", 1), "flujo": flujo, "idiomas": idiomas,
+        "pedir_consentimiento": curso.get("pedir_consentimiento", True),
         "videos": [_recurso_publico(v) for v in curso.get("videos", [])]}
 
 

@@ -236,8 +236,11 @@ async function elegirModo() {
   if (CURSO.atencion === "sin") return empezarSinCamara();
   if (CURSO.atencion === "auto") {                 // sin preguntar: con cámara si hay, si no sin cámara
     if (!(await tieneCamara())) return empezarSinCamara();
-    $("alt-sin").classList.add("oculto"); return mostrar("paso-consent");
+    $("alt-sin").classList.add("oculto");
+    if (CURSO.pedir_consentimiento === false) return empezarConCamara(false);
+    return mostrar("paso-consent");
   }
+  if (CURSO.atencion === "camara" && CURSO.pedir_consentimiento === false) { $("alt-sin").classList.add("oculto"); return empezarConCamara(false); }
   if (CURSO.atencion === "camara") { $("alt-sin").classList.add("oculto"); return mostrar("paso-consent"); }
   mostrar("paso-modo");
 }
@@ -262,11 +265,14 @@ function empezarEstudio() {
 
 // ----------------------------------------------------------------- 2. consentimiento + cámara
 $("acepto").onchange = () => { $("btn-consent").disabled = !$("acepto").checked; };
-$("btn-consent").onclick = async () => {
+$("btn-consent").onclick = () => empezarConCamara(true);
+// conAviso: false = el curso no muestra la pantalla de consentimiento (arranca directo con la cámara)
+async function empezarConCamara(conAviso) {
   $("btn-consent").disabled = true; $("err-consent").textContent = "";
   estado.modo = "camara";
-  const { ok, datos } = await post("/inicio", { ...estado.registro, token: TOKEN, consentimiento: true, curso: SLUG, modo: "camara", examen: CURSO.examen,
+  const { ok, datos } = await post("/inicio", { ...estado.registro, token: TOKEN, consentimiento: conAviso, curso: SLUG, modo: "camara", examen: CURSO.examen,
                                                 dispositivo: navigator.userAgent.slice(0, 120) });
+  if (!ok && !conAviso) { mostrar("paso-consent"); }
   if (!ok) { $("err-consent").textContent = "No se pudo iniciar: " + ((datos.errores || []).join(", ") || "probá de nuevo"); $("btn-consent").disabled = false; return; }
   estado.sesion = datos.sesion; estado.preguntas = datos.preguntas;
   $("barra-camara").classList.remove("oculto");      // visible antes de arrancar: oculta, algunos navegadores no entregan cuadros
@@ -275,11 +281,12 @@ $("btn-consent").onclick = async () => {
   } catch (e) {
     $("barra-camara").classList.add("oculto");
     if (CURSO.atencion === "auto") { apagarCamara(); return empezarSinCamara(); }   // no anduvo la cámara: sigue sin cámara
+    if (!conAviso) mostrar("paso-consent");
     $("err-consent").textContent = "No se pudo usar la cámara (" + (e.name || e.message) + "). Revisá los permisos del navegador o usá la versión sin control de atención.";
     $("btn-consent").disabled = false; return;
   }
   empezarEstudio();
-};
+}
 
 // ----------------------------------------------------------------- 3. atención (todo local)
 const at = { total: 0, atento: 0, sinAtencion: 0, racha: 0, distracciones: 0, salidas: 0, ojos: 0,
