@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block titulo %}Resultado · {{ r.nombre }} · {{ r.curso_titulo }}{% endblock %}
+{% block contenido %}
+<p><a href="javascript:history.back()">← Volver</a> · <a href="{{ P }}/cumplimiento">Cumplimiento</a></p>
+<div class="res-grid">
+<section class="tarjeta res">
+  <p class="suave" style="margin:0">{{ r.curso_titulo }}{% if r.version %} (v{{ r.version }}){% endif %} · {{ r.fecha }} ·
+    {{ 'con cámara' if r.modo == 'camara' else 'sin cámara' }}</p>
+  <h1 style="margin:6px 0 2px">{{ r.nombre }}</h1>
+  <p class="suave" style="margin:0 0 12px">DNI {{ r.dni }}{% if chofer and chofer.transporte %} · {{ chofer.transporte }}{% endif %}</p>
+  {% if r.examen %}
+    <h2 class="{{ 'res-ok' if r.aprobado else 'res-mal' }}">{{ '✅ Aprobó' if r.aprobado else '❌ No aprobó' }}</h2>
+    <p class="grande"><b>{{ r.correctas }} de {{ r.total }}</b> correctas ({{ r.puntaje }}%). Se aprueba con {{ r.aprobacion }}%.</p>
+  {% else %}
+    <h2 class="res-ok">✅ Completó la capacitación</h2>
+  {% endif %}
+  {% if r.diploma %}<p><a class="boton" href="{{ P }}/publico/diploma/{{ r.diploma }}" target="_blank">🎓 Diploma (PDF)</a></p>{% endif %}
+  {% if r.modo == 'camara' %}
+    <h3>Atención durante el estudio</h3>
+    <div class="metricas">
+      <div><b>{{ r.atencion.pct if r.atencion.pct is not none else '—' }}%</b>atención</div>
+      <div><b>{{ r.atencion.distracciones or 0 }}</b>distracciones</div>
+      <div><b>{{ r.atencion.salidas or 0 }}</b>salidas de la página</div>
+      <div><b>{{ r.atencion.minutos }} min</b>de estudio</div>
+    </div>
+    <p class="suave">{{ 'Aceptó el aviso de control de atención.' if r.consentimiento else 'Sin pantalla de consentimiento.' }}</p>
+  {% else %}
+    <div class="metricas"><div><b>{{ r.atencion.minutos }} min</b>de estudio</div></div>
+  {% endif %}
+  {% if r.fallas %}
+    <h3>Respuestas incorrectas</h3>
+    {% for f in r.fallas %}
+      <div class="falla"><b>{{ f.pregunta }}</b>
+        {% if f.respuesta is not none %}<div class="res-mal">Su respuesta: {{ f.respuesta }}</div><div class="res-ok">Correcta: {{ f.correcta }}</div>
+        {% else %}<div class="suave">(intento anterior al 25/11/2026: no se guardó qué respondió)</div>{% endif %}</div>
+    {% endfor %}
+  {% elif r.examen %}<p class="res-ok">Todas las respuestas correctas.</p>{% endif %}
+  <p class="suave" style="font-size:12px">Dispositivo: {{ r.dispositivo }}</p>
+</section>
+
+<section class="tarjeta">
+  <h2 style="margin-top:0">Intentos en este curso <span class="suave">({{ otros|length }})</span></h2>
+  <ul class="intentos">{% for o in otros %}
+    <li class="{{ 'actual' if o.id == r.id }}"><a href="{{ P }}/resultado/{{ o.id }}">{{ o.fecha }}</a>
+      · {% if o.examen %}{{ o.puntaje }}% {{ '✔' if o.aprobado else '✘' }}{% else %}completado{% endif %}
+      {% if o.modo == 'camara' and o.atencion.pct is not none %}<span class="suave">· atención {{ o.atencion.pct }}%</span>{% endif %}</li>
+  {% endfor %}</ul>
+</section>
+</div>
+<style>
+.res-grid { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr); gap:16px; align-items:start; }
+@media (max-width:800px) { .res-grid { grid-template-columns:1fr; } }
+.res-ok { color:var(--verde); } .res-mal { color:var(--rojo); }
+.grande { font-size:18px; }
+.metricas { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; } .metricas div { background:var(--bg); border-radius:8px; padding:10px; } .metricas b { display:block; font-size:20px; }
+.falla { border:1px solid var(--borde); border-radius:8px; padding:10px; margin:8px 0; }
+.intentos { padding-left:18px; } .intentos li { margin:6px 0; } .intentos li.actual { font-weight:600; }
+</style>
+{% endblock %}

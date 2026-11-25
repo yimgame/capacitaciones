@@ -406,7 +406,8 @@ def estado(asig, resultados, curso, hoy=None):
     aprobados = [r for r in validos if r["aprobado"]]
     out = {"intentos": len(validos), "mejor": max((r["puntaje"] for r in validos), default=None),
            "aprobado_el": None, "vence": None, "limite": asig.get("limite"),
-           "ultimo": _fecha_local(validos[-1]["fecha"]).strftime("%d/%m/%Y") if validos else None}
+           "ultimo": _fecha_local(validos[-1]["fecha"]).strftime("%d/%m/%Y") if validos else None,
+           "ultimo_id": validos[-1].get("id") if validos else None}
     meses = int(curso.get("vigencia_meses") or 0) if curso else 0
     if aprobados:
         ap = _fecha_local(aprobados[-1]["fecha"]).date()
@@ -599,7 +600,12 @@ def mis_cursos(ch, resultados):
                          "resultado_id": a.get("resultado_id")}
                         for a in asign if a["curso"] in habilitados), key=lambda x: orden[x["estado"]])
     ya = {a["slug"] for a in asignados}
-    abiertos = [{"slug": c["slug"], "titulo": c["titulo"], "descripcion": c.get("descripcion", "")}
+    hechos = {}
+    for r in resultados:
+        if r["dni"] == ch["dni"]:
+            hechos[r["curso"]] = hechos.get(r["curso"], 0) + 1
+    abiertos = [{"slug": c["slug"], "titulo": c["titulo"], "descripcion": c.get("descripcion", ""),
+                 "intentos": hechos.get(c["slug"], 0)}
                 for c in habilitados.values() if c.get("acceso", "abierto") == "abierto" and c["slug"] not in ya]
     return {"asignados": asignados, "abiertos": abiertos}
 

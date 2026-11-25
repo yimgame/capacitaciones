@@ -206,7 +206,8 @@ async function verChofer(dni) {
     <p>DNI ${esc(c.dni)} · ${esc(c.empresa)} · Cel. ${esc(c.celular)}${c.edad !== null ? ` · ${c.edad} años` : ""}</p>
     <p>${c.aprobado ? `<span class="ok">✔ Aprobado</span> en el intento ${c.intentos_hasta_aprobar}` : '<span class="mal">✘ Todavía no aprobó</span>'} · mejor nota ${c.mejor}%${c.atencion !== null ? ` · atención promedio ${c.atencion}%` : ""}</p>` +
     d.evaluaciones.map((e) => `<div class="eval ${e.aprobado ? "eval-ok" : "eval-mal"}">
-      <div><b>${esc(e.fecha)}</b> · ${esc(e.curso || "")} · ${esc(e.fuente)} · <b>${e.puntaje}%</b> (${e.correctas}/${e.total}) ${e.aprobado ? "✔" : "✘"}</div>
+      <div><b>${esc(e.fecha)}</b> · ${esc(e.curso || "")} · ${esc(e.fuente)} · <b>${e.puntaje}%</b> (${e.correctas}/${e.total}) ${e.aprobado ? "✔" : "✘"}
+        ${e.id ? ` · <a href="${P}/resultado/${e.id}">📋 Ver resultado</a>` : ""}</div>
       ${e.atencion !== null ? `<div class="suave">Atención ${e.atencion}% · ${e.distracciones} distracciones · ${e.salidas} salidas de pantalla · ${num(e.minutos_estudio)} min de estudio</div>` : ""}
       ${e.errores.length ? `<details><summary>${e.errores.length} respuestas incorrectas</summary><ul>${e.errores.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></details>` : ""}
     </div>`).join("");

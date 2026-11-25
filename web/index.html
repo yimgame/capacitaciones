@@ -23,6 +23,12 @@ button.link { width:auto; background:none; color:var(--acento); padding:0; margi
 a.curso:hover { border-color:var(--acento); transform:translateY(-1px); }
 .curso b { display:block; font-size:18px; margin-bottom:4px; }
 .curso .ir { color:var(--acento); font-weight:600; font-size:15px; margin-top:8px; display:block; }
+.ver-res { display:block; margin:-4px 0 14px 4px; font-weight:600; background:none; border:0; padding:0; color:var(--acento, #1f6feb); cursor:pointer; font:inherit; text-decoration:underline; }
+.intento { border:1px solid var(--borde); border-radius:10px; padding:12px; margin:10px 0; }
+.intento summary { cursor:pointer; font-weight:600; }
+.res-ok { color:var(--ok); } .res-mal { color:var(--mal); }
+.metricas { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; margin:8px 0; } .metricas div { background:var(--bg); border-radius:8px; padding:10px; } .metricas b { display:block; font-size:20px; }
+.falla { border:1px solid var(--borde); border-radius:8px; padding:10px; margin:8px 0; font-size:15px; }
 a.diploma { display:block; margin:-4px 0 14px 4px; font-weight:600; color:var(--ok); }
 .estado { font-size:14px; font-weight:600; } .e-aprobado { color:var(--ok); } .e-por_vencer, .e-pendiente { color:var(--aviso); } .e-atrasado, .e-vencido { color:var(--mal); }
 .oculto { display:none; }
@@ -51,6 +57,11 @@ a.diploma { display:block; margin:-4px 0 14px 4px; font-weight:600; color:var(--
     <div id="asignados"></div>
   </section>
 
+  <section id="resultados" class="oculto">
+    <p><button class="link" id="b-volver">← Volver a mis capacitaciones</button></p>
+    <div id="res-contenido"></div>
+  </section>
+
   <h2 id="t-abiertos">Capacitaciones abiertas</h2>
   <div id="abiertos"><p class="suave">Cargando…</p></div>
 </main>
@@ -70,7 +81,7 @@ const tarjeta = (c, extra = "", ir = "Empezar →") => `<a class="curso" href="/
 
 function abiertos(lista, conSesion) {
   $("t-abiertos").textContent = conSesion ? "Otras capacitaciones disponibles" : "Capacitaciones abiertas";
-  $("abiertos").innerHTML = lista.length ? lista.map((c) => tarjeta(c)).join("")
+  $("abiertos").innerHTML = lista.length ? lista.map((c) => tarjeta(c) + verRes(c)).join("")
     : `<p class="suave">${conSesion ? "No hay otras capacitaciones abiertas." : "No hay capacitaciones abiertas en este momento. Ingresá para ver las tuyas."}</p>`;
 }
 async function cargarPublicos() {
@@ -97,7 +108,7 @@ async function cargarMios() {
         // (fuera de la tarjeta: la tarjeta ya es un link)
         const dip = c.diploma ? `<a class="diploma" href="/panel/publico/diploma/${esc(c.diploma)}" target="_blank" rel="noopener">🎓 Descargar el diploma de «${esc(c.titulo)}» (PDF)</a>` : "";
         return tarjeta(c, `<div class="estado e-${c.estado}">${esc(c.estado_txt)}</div><div class="suave">${esc(det)}${intentos}</div>`,
-                       c.estado === "aprobado" ? "Repasar →" : "Hacer la capacitación →") + dip;
+                       c.estado === "aprobado" ? "Repasar →" : "Hacer la capacitación →") + dip + verRes(c);
       }).join("")
     : `<p class="suave">No tenés capacitaciones asignadas por ahora.</p>`;
   abiertos(d.abiertos, true);
@@ -120,6 +131,36 @@ $("b-cel").onclick = async () => {
   if (!ok) { $("err-cel").textContent = d.error || "No se pudo guardar."; return; }
   $("pedir-cel").innerHTML = "<b>✔ ¡Gracias!</b> Guardamos tu celular.";
 };
+// ----------------------------------------------------------------- volver a ver el resultado de un curso
+function verRes(c) {
+  return c.intentos ? `<button class="ver-res" data-resultado="${esc(c.slug)}" data-titulo="${esc(c.titulo)}">📋 Ver mi resultado</button>` : "";
+}
+function intentoHtml(r) {
+  const a = r.atencion;
+  return (r.examen
+      ? `<h3 class="${r.aprobado ? "res-ok" : "res-mal"}" style="margin:6px 0">${r.aprobado ? "✅ Aprobaste" : "❌ No aprobaste"}</h3>
+         <p><b>${r.correctas} de ${r.total}</b> correctas (${r.puntaje}%). Se aprueba con ${r.aprobacion}%.</p>`
+      : `<h3 class="res-ok">✅ Completaste la capacitación</h3>`) +
+    (r.diploma ? `<p><a href="/panel/publico/diploma/${esc(r.diploma)}" target="_blank" rel="noopener">🎓 Descargar el diploma (PDF)</a></p>` : "") +
+    (r.modo === "camara"
+      ? `<div class="metricas"><div><b>${a.pct ?? "—"}%</b>atención</div><div><b>${a.distracciones ?? 0}</b>distracciones</div>
+         <div><b>${a.salidas ?? 0}</b>salidas de la página</div><div><b>${a.minutos} min</b>de estudio</div></div>`
+      : `<div class="metricas"><div><b>${a.minutos} min</b>de estudio</div></div>`) +
+    (r.fallas.length ? `<b>Repasá estas respuestas</b>` + r.fallas.map((f) => `<div class="falla"><b>${esc(f.pregunta)}</b>` +
+      (f.respuesta !== null ? `<div class="res-mal">Tu respuesta: ${esc(f.respuesta)}</div><div class="res-ok">Correcta: ${esc(f.correcta)}</div>` : "") +
+      `</div>`).join("") : "");
+}
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-resultado]"); if (!b) return;
+  const { ok, d } = await post("chofer/resultados", { token: guardado.get("chofer_token"), curso: b.dataset.resultado });
+  if (!ok) { alert(d.error || "No se pudo cargar."); return; }
+  $("res-contenido").innerHTML = `<h2>${esc(b.dataset.titulo)}</h2>` + (d.intentos.length ? d.intentos.map((r, i) =>
+    `<details class="intento" ${i === 0 ? "open" : ""}><summary>${esc(r.fecha)} · ${r.examen ? `${r.puntaje}% ${r.aprobado ? "✔" : "✘"}` : "completado"}${i === 0 ? " (el último)" : ""}</summary>${intentoHtml(r)}</details>`).join("")
+    : `<p class="suave">Todavía no hay resultados.</p>`);
+  ["mios", "abiertos", "t-abiertos"].forEach((id) => $(id).classList.add("oculto"));
+  $("resultados").classList.remove("oculto"); window.scrollTo(0, 0);
+});
+$("b-volver").onclick = () => { $("resultados").classList.add("oculto"); ["mios", "abiertos", "t-abiertos"].forEach((id) => $(id).classList.remove("oculto")); };
 $("b-salir").onclick = () => { guardado.set("chofer_token", null); guardado.set("chofer_nombre", null); location.reload(); };
 cargarMios().then((ok) => { if (!ok) cargarPublicos(); });
 </script>

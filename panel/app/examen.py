@@ -22,7 +22,7 @@ VENCE_SESION = 24 * 3600
 
 COLUMNAS = ["fecha", "nombre", "dni", "celular", "empresa", "fecha_nacimiento", "curso", "modo", "correctas", "total",
             "puntaje", "aprobado", "errores", "consentimiento", "atencion_pct", "distracciones", "salidas_pantalla",
-            "segundos_estudio", "segundos_sin_atencion", "dispositivo", "curso_version", "diploma"]
+            "segundos_estudio", "segundos_sin_atencion", "dispositivo", "curso_version", "diploma", "detalle"]
 
 
 def iniciar():
@@ -42,6 +42,8 @@ def iniciar():
                 c.execute(f"ALTER TABLE {tabla} ADD COLUMN curso_version INTEGER")
         if "consentimiento" not in {r["name"] for r in c.execute("PRAGMA table_info(examen_sesiones)")}:   # 2026-11-25
             c.execute("ALTER TABLE examen_sesiones ADD COLUMN consentimiento INTEGER")
+        if "detalle" not in {r["name"] for r in c.execute("PRAGMA table_info(resultados)")}:   # 2026-11-25
+            c.execute("ALTER TABLE resultados ADD COLUMN detalle TEXT")   # fallas con la respuesta (para volver a verlo)
         if "diploma" not in {r["name"] for r in c.execute("PRAGMA table_info(resultados)")}:   # 2026-11-24
             c.execute("ALTER TABLE resultados ADD COLUMN diploma TEXT")
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS resultados_diploma ON resultados(diploma)")
@@ -203,6 +205,7 @@ def fin(b):
         "segundos_sin_atencion": _num(a.get("segundosSinAtencion"), 86400) if camara else None,
         "dispositivo": str(b.get("dispositivo") or "")[:120], "curso_version": s["curso_version"],
         "diploma": None,
+        "detalle": json.dumps({"fallas": fallas, "aprobacion": aprobacion}, ensure_ascii=False),
     }
     curso = cursos.obtener(s["curso"]) or {}
     if fila["aprobado"] and curso.get("diploma", True):
@@ -212,6 +215,39 @@ def fin(b):
                   [fila[k] for k in COLUMNAS])
     return {"ok": True, "correctas": correctas, "total": total, "puntaje": puntaje, "aprobado": fila["aprobado"],
             "aprobacion": aprobacion, "fallas": fallas, "diploma": fila["diploma"]}
+
+
+def resultado(rid):
+    with closing(cursos.con()) as c:
+        r = c.execute("SELECT * FROM resultados WHERE id=?", (rid,)).fetchone()
+    return dict(r) if r else None
+
+
+def intentos(dni, curso):
+    """Todos los intentos de un chofer en un curso (el más nuevo primero)."""
+    with closing(cursos.con()) as c:
+        return [dict(r) for r in c.execute("SELECT * FROM resultados WHERE dni=? AND curso=? ORDER BY fecha DESC",
+                                           (str(dni), curso))]
+
+
+def para_ver(r):
+    """Un resultado listo para mostrar (la misma pantalla que ve el chofer al terminar)."""
+    d = json.loads(r["detalle"]) if r.get("detalle") else {}
+    fallas = d.get("fallas")
+    if fallas is None:            # resultados de antes del 25/11: solo se guardaba el texto de las preguntas erradas
+        fallas = [{"pregunta": p.strip(), "respuesta": None, "correcta": None} for p in (r.get("errores") or "").split(" | ")
+                  if p.strip()]
+    curso = cursos.obtener(r["curso"]) or {}
+    fecha = datetime.fromisoformat(str(r["fecha"]).replace("Z", "+00:00")).astimezone(cursos.TZ)
+    return {"id": r["id"], "fecha": fecha.strftime("%d/%m/%Y %H:%M"), "curso": r["curso"],
+            "curso_titulo": curso.get("titulo", r["curso"]), "version": r.get("curso_version"),
+            "nombre": r["nombre"], "dni": r["dni"], "modo": r["modo"], "examen": bool(r["total"]),
+            "correctas": r["correctas"], "total": r["total"], "puntaje": r["puntaje"], "aprobado": bool(r["aprobado"]),
+            "aprobacion": d.get("aprobacion") or curso.get("aprobacion", cursos.APROBACION),
+            "atencion": {"pct": r["atencion_pct"], "distracciones": r["distracciones"], "salidas": r["salidas_pantalla"],
+                         "minutos": round((r["segundos_estudio"] or 0) / 60, 1)},
+            "fallas": fallas, "diploma": r.get("diploma") if r["aprobado"] and curso.get("diploma", True) else None,
+            "consentimiento": bool(r.get("consentimiento")), "dispositivo": r.get("dispositivo") or ""}
 
 
 def resultados():

@@ -190,7 +190,7 @@ async def chofer(req: Request, dni: str, demo: str = ""):
             "puntaje": f["puntaje"], "correctas": f["correctas"], "total": f["total"], "aprobado": f["aprobado"],
             "atencion": f["atencion"], "distracciones": f["distracciones"], "salidas": f["salidas"],
             "minutos_estudio": round(f["seg_estudio"] / 60, 1) if f["seg_estudio"] else None,
-            "errores": f["errores"]} for f in reversed(filas)],
+            "errores": f["errores"], "id": f.get("id") if demo != "1" else None} for f in reversed(filas)],
     }
 
 
@@ -314,6 +314,35 @@ async def chofer_cursos(req: Request):
                 (cursos.obtener(c["slug"]) or {}).get("diploma", True):
             c["diploma"] = examen.asegurar_diploma(rid)
     return {"ok": True, "nombre": ch["nombre"], "transporte": ch["transporte"], "falta_celular": not ch["celular"], **mios}
+
+
+@app.post(PREFIJO + "/publico/chofer/resultados")
+async def chofer_resultados(req: Request):
+    """El chofer vuelve a ver sus resultados de un curso (solo los suyos: sale del token de su ingreso)."""
+    try:
+        b = await req.json()
+    except ValueError:
+        b = {}
+    ch = padron.chofer_de_token(b.get("token"))
+    if not ch:
+        return JSONResponse({"ok": False, "error": "Sesión vencida: volvé a ingresar."}, status_code=401)
+    return {"ok": True, "intentos": [examen.para_ver(r) | {"dispositivo": None}
+                                     for r in examen.intentos(ch["dni"], str(b.get("curso") or ""))]}
+
+
+@app.get(PREFIJO + "/resultado/{rid}", response_class=HTMLResponse)
+def resultado_pagina(req: Request, rid: int):
+    """Panel: un resultado (lo que vio el chofer al terminar) y sus otros intentos en ese curso."""
+    u = _requiere(req)
+    r = examen.resultado(rid)
+    if not r:
+        raise HTTPException(404, "No existe ese resultado")
+    ch = padron.chofer(r["dni"])
+    if _solo_transporte(u) and (not ch or ch["transporte_id"] != _solo_transporte(u)):
+        raise HTTPException(403, "Ese chofer no es de tu transporte")
+    return plantillas.TemplateResponse(req, "resultado.html", {
+        "u": u, "r": examen.para_ver(r), "chofer": ch,
+        "otros": [examen.para_ver(x) for x in examen.intentos(r["dni"], r["curso"])]})
 
 
 @app.get(PREFIJO + "/publico/diploma/{codigo}")
@@ -683,7 +712,7 @@ def cumplimiento_api(req: Request, transporte: str = "", curso: str = "", estado
     u = _requiere(req)
     filas, semaforo = _cumplimiento(u, transporte, curso, estado, jrt)
     claves = ("curso", "curso_titulo", "dni", "nombre", "celular", "transporte", "transporte_id", "jrt", "estado",
-              "estado_txt", "limite", "vence", "aprobado_el", "intentos", "mejor", "ultimo", "diploma")
+              "estado_txt", "limite", "vence", "aprobado_el", "intentos", "mejor", "ultimo", "diploma", "ultimo_id")
     return {"filas": [{k: f.get(k) for k in claves} for f in filas], "semaforo": semaforo,
             "reglas": [r for r in padron.reglas() if not _solo_transporte(u) or r["transporte_id"] == _solo_transporte(u)]}
 
