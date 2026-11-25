@@ -31,7 +31,8 @@ ACCESO = {"abierto": "Abierto: lo puede hacer cualquiera desde la portada",
 VIGENCIA_FECHA = -1          # vigencia_meses = -1: vence en una fecha fija (vence_fecha)
 VIGENCIA = {0: "No vence", 6: "Cada 6 meses", 12: "Anual (cada 12 meses)", 24: "Cada 2 años", 36: "Cada 3 años",
             VIGENCIA_FECHA: "Hasta una fecha específica"}
-ATENCION = {"elegir": "El chofer elige: con o sin cámara",
+ATENCION = {"auto": "Automático: con cámara si el dispositivo tiene, si no sin cámara (sin preguntar)",
+            "elegir": "El chofer elige: con o sin cámara",
             "camara": "Solo con control de atención (cámara)",
             "sin": "Solo sin cámara"}
 
@@ -234,7 +235,7 @@ def crear(slug, titulo, copiar_de=""):
     base = obtener(copiar_de) if copiar_de else None
     curso = {k: v for k, v in base.items() if k not in META} if base else _base(slug, titulo or slug, "", 99)
     if not base:
-        curso["atencion"] = "camara"           # reunión 2026-11-18: entra directo con control de cámara
+        curso["atencion"] = "auto"             # pedido 2026-11-25: con cámara si tiene, si no sin cámara, sin elegir
     curso.update(slug=slug, titulo=(titulo or curso["titulo"]).strip()[:120], videos=[] if not base else
                  [dict(v) for v in base.get("videos", []) if v.get("tipo") == "youtube"], habilitado=False,
                  orden=len(listar()) + 1)

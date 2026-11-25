@@ -224,8 +224,20 @@ $("btn-registro").onclick = () => {
   estado.registro = r;
   elegirModo();
 };
-function elegirModo() {
+// ¿el dispositivo tiene cámara? (sin pedir permiso: solo mira si hay alguna entrada de video)
+async function tieneCamara() {
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return false;
+    if (!navigator.mediaDevices.enumerateDevices) return true;
+    return (await navigator.mediaDevices.enumerateDevices()).some((d) => d.kind === "videoinput");
+  } catch { return false; }
+}
+async function elegirModo() {
   if (CURSO.atencion === "sin") return empezarSinCamara();
+  if (CURSO.atencion === "auto") {                 // sin preguntar: con cámara si hay, si no sin cámara
+    if (!(await tieneCamara())) return empezarSinCamara();
+    $("alt-sin").classList.add("oculto"); return mostrar("paso-consent");
+  }
   if (CURSO.atencion === "camara") { $("alt-sin").classList.add("oculto"); return mostrar("paso-consent"); }
   mostrar("paso-modo");
 }
@@ -262,6 +274,7 @@ $("btn-consent").onclick = async () => {
     await iniciarCamara();
   } catch (e) {
     $("barra-camara").classList.add("oculto");
+    if (CURSO.atencion === "auto") { apagarCamara(); return empezarSinCamara(); }   // no anduvo la cámara: sigue sin cámara
     $("err-consent").textContent = "No se pudo usar la cámara (" + (e.name || e.message) + "). Revisá los permisos del navegador o usá la versión sin control de atención.";
     $("btn-consent").disabled = false; return;
   }
